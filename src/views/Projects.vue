@@ -13,6 +13,7 @@ const projectLocation = ref('');
 const projectStatus = ref('In Progress');
 const currentEditProject = ref(null);
 const fetchProjects = inject('fetchProjects');
+const projectIdToDelete = ref(null);
 
 const statusOptions = [
     {
@@ -187,7 +188,8 @@ fetchProjects();
                                 <PencilSquareIcon class="h-5 w-5" />
                             </button>
                             <button
-                                @click="deleteProject(project.id)"
+                                @click="projectIdToDelete = project.id"
+                                onclick="my_modal_1.showModal()"
                                 class="btn btn-ghost btn-sm text-error"
                                 title="Delete Project"
                             >
@@ -348,6 +350,19 @@ fetchProjects();
                 <button @click="showEditProjectModal = false">close</button>
             </form>
         </dialog>
+        <dialog id="my_modal_1" class="modal">
+            <div class="modal-box bg-warning text-warning-content">
+                <h3 class="text-lg font-bold">Deleting Project</h3>
+                <p class="py-4">Are you sure you want to delete this project?</p>
+                <div class="modal-action">
+                    <form method="dialog">
+                        <!-- if there is a button in form, it will close the modal -->
+                        <button class="btn" @click="deleteProject(projectIdToDelete)">Delete</button>
+                    </form>
+                </div>
+            </div>
+        </dialog>
+
     </div>
 </template>
 
