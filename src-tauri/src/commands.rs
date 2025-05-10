@@ -66,14 +66,14 @@ pub fn open_folder(location: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| e.to_string())?;
         return Ok(());
-    } else if cfg!(unix) {
-        std::process::Command::new("xdg-open")
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
             .arg(location)
             .spawn()
             .map_err(|e| e.to_string())?;
         return Ok(());
-    } else if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
+    } else if cfg!(unix) {
+        std::process::Command::new("xdg-open")
             .arg(location)
             .spawn()
             .map_err(|e| e.to_string())?;

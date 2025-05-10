@@ -225,7 +225,7 @@ fetchProjects();
                         </label>
                         <textarea
                             v-model="projectDescription"
-                            class="textarea textarea-bordered h-24"
+                            class="textarea textarea-bordered h-24 w-full"
                         ></textarea>
                     </div>
 
@@ -233,7 +233,7 @@ fetchProjects();
                         <label class="label">
                             <span class="label-text">Project Location</span>
                         </label>
-                        <div class="join">
+                        <div class="">
                             <input
                                 v-model="projectLocation"
                                 type="text"
@@ -243,7 +243,7 @@ fetchProjects();
                             <button
                                 type="button"
                                 @click="selectProjectFolder"
-                                class="btn join-item"
+                                class="btn join-item mt-2"
                             >
                                 Browse
                             </button>

@@ -160,7 +160,7 @@ const cloneRecord = (row: any) => {
                         <label tabindex="0" class="btn btn-ghost btn-sm">
                             Saved Queries
                         </label>
-                        <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
+                        <ul tabindex="0" class="dropdown-content z-1 menu p-2 shadow-sm bg-base-100 rounded-box w-52">
                             <li v-for="query in savedQueries" :key="query.id">
                                 <a @click="loadSavedQuery(query)">{{ query.name }}</a>
                             </li>
