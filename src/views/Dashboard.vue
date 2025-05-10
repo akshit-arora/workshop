@@ -1,22 +1,15 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, inject } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import WelcomeSection from '../components/WelcomeSection.vue';
 
-const selectedProject = ref(null);
+const selectedProject = inject('selectedProject');
 const defaultEditor = ref(localStorage.getItem('defaultEditor') || 'VSCode');
-
-onMounted(() => {
-    const storedProject = localStorage.getItem('selectedProject');
-    if (storedProject) {
-        selectedProject.value = JSON.parse(storedProject);
-    }
-});
 
 const statusBadgeClass = (status: string) => {
     const statusClasses = {
         'InProgress': 'badge-primary',
-        'Completed': 'badge-success', 
+        'Completed': 'badge-success',
         'InitialStage': 'badge-warning',
         'OnHold': 'badge-neutral',
         'Abandoned': 'badge-error'
@@ -48,12 +41,12 @@ const openProjectInEditor = async () => {
 
             // Get the command for the selected editor
             const command = editorCommands[defaultEditor.value];
-            
+
             if (command) {
                 // Use Tauri invoke to run the editor command
-                await invoke('open_in_editor', { 
-                    editor: command, 
-                    location: selectedProject.value.location 
+                await invoke('open_in_editor', {
+                    editor: command,
+                    location: selectedProject.value.location
                 });
             } else {
                 console.error('Unsupported editor:', defaultEditor.value);
@@ -68,27 +61,27 @@ const openProjectInEditor = async () => {
 <template>
     <div class="space-y-6">
         <WelcomeSection />
-        
+
         <!-- Selected Project Section -->
-        <div 
-            v-if="selectedProject" 
+        <div
+            v-if="selectedProject"
             class="card bg-base-100 shadow-xl"
         >
             <div class="card-body">
                 <div class="flex justify-between items-center">
                     <h2 class="card-title">Current Project</h2>
-                    <div 
-                        class="badge" 
+                    <div
+                        class="badge"
                         :class="statusBadgeClass(selectedProject.status)"
                     >
-                        {{ 
+                        {{
                             {
                                 'InProgress': 'In Progress',
-                                'Completed': 'Completed', 
+                                'Completed': 'Completed',
                                 'InitialStage': 'Initial Stage',
                                 'OnHold': 'On Hold',
                                 'Abandoned': 'Abandoned'
-                            }[selectedProject.status] || selectedProject.status 
+                            }[selectedProject.status] || selectedProject.status
                         }}
                     </div>
                 </div>
@@ -98,11 +91,11 @@ const openProjectInEditor = async () => {
                         <p>{{ selectedProject.description || 'No description provided' }}</p>
                     </div>
                 </div>
-                
+
                 <div class="card-actions mt-4 flex justify-between items-center">
                     <div class="flex space-x-2">
-                        <button 
-                            @click="openProjectFolder" 
+                        <button
+                            @click="openProjectFolder"
                             class="btn btn-ghost btn-sm"
                             title="Open Project Folder"
                         >
@@ -110,8 +103,8 @@ const openProjectInEditor = async () => {
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6A2.25 2.25 0 0 1 6 3.75h3.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12a1.5 1.5 0 0 0 1.06.44H18A2.25 2.25 0 0 1 20.25 9v.776" />
                             </svg>
                         </button>
-                        <button 
-                            @click="openProjectInEditor" 
+                        <button
+                            @click="openProjectInEditor"
                             class="btn btn-ghost btn-sm"
                             :title="`Open in ${defaultEditor}`"
                         >

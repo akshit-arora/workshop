@@ -6,38 +6,24 @@ import { invoke } from '@tauri-apps/api/core';
 
 const toggleSidebar = inject('toggleSidebar');
 
-// Project-related variables
-const projects = ref([]);
-const selectedProject = ref(null);
-const projectDropdown = ref(null);
 
-// Fetch projects on component mount
-const fetchProjects = async () => {
-    try {
-        projects.value = await invoke('get_projects');
-        
-        // Try to load previously selected project from localStorage
-        const storedProject = localStorage.getItem('selectedProject');
-        if (storedProject) {
-            selectedProject.value = JSON.parse(storedProject);
-        }
-    } catch (error) {
-        console.error('Failed to fetch projects', error);
-    }
-};
+// Project-related variables
+const projects = inject('projects');
+const selectedProject = inject('selectedProject');
+const projectDropdown = ref(null);
 
 // Handle project selection
 const selectProject = (project) => {
     selectedProject.value = project;
     localStorage.setItem('selectedProject', JSON.stringify(project));
-    
+
     // Close dropdown by removing focus
     if (projectDropdown.value) {
         projectDropdown.value.blur();
     }
 };
 
-onMounted(fetchProjects);
+// onMounted(fetchProjects);
 </script>
 
 <template>
@@ -64,10 +50,10 @@ onMounted(fetchProjects);
         <div class="navbar-end">
             <!-- Project Dropdown -->
             <div class="dropdown dropdown-end mx-2">
-                <div 
+                <div
                     ref="projectDropdown"
-                    tabindex="0" 
-                    role="button" 
+                    tabindex="0"
+                    role="button"
                     class="btn btn-ghost m-1 gap-2"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
@@ -78,8 +64,8 @@ onMounted(fetchProjects);
                 </div>
                 <ul tabindex="0" class="dropdown-content z-[1] p-2 shadow-2xl bg-base-200 rounded-box w-52 max-h-[70vh] overflow-y-auto">
                     <li v-for="project in projects" :key="project.id">
-                        <button 
-                            class="btn btn-sm btn-block btn-ghost justify-start" 
+                        <button
+                            class="btn btn-sm btn-block btn-ghost justify-start"
                             @click="selectProject(project)"
                             :class="{ 'bg-primary text-primary-content': selectedProject?.id === project.id }"
                         >

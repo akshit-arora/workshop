@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { inject, ref } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
 import { PencilSquareIcon } from '@heroicons/vue/24/outline';
 import { invoke } from '@tauri-apps/api/core';
 
-const projects = ref([]);
+const projects = inject('projects');
 const showNewProjectModal = ref(false);
 const showEditProjectModal = ref(false);
 const projectName = ref('');
@@ -12,14 +12,7 @@ const projectDescription = ref('');
 const projectLocation = ref('');
 const projectStatus = ref('In Progress');
 const currentEditProject = ref(null);
-
-const fetchProjects = async () => {
-    try {
-        projects.value = await invoke('get_projects');
-    } catch (error) {
-        console.error('Failed to fetch projects', error);
-    }
-};
+const fetchProjects = inject('fetchProjects');
 
 const statusOptions = [
     {
@@ -152,15 +145,15 @@ fetchProjects();
 
         <!-- Project Grid -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div 
-                v-for="project in projects" 
-                :key="project.id" 
+            <div
+                v-for="project in projects"
+                :key="project.id"
                 class="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow duration-300"
             >
                 <div class="card-body">
                     <div class="flex justify-between items-center">
                         <h2 class="card-title">{{ project.name }}</h2>
-                        <div class="badge" 
+                        <div class="badge"
                             :class="{
                                 'badge-primary': project.status === 'InProgress',
                                 'badge-success': project.status === 'Completed',
@@ -169,15 +162,15 @@ fetchProjects();
                                 'badge-error': project.status === 'Abandoned'
                             }"
                         >
-                            {{ 
-                                statusOptions.find(status => status.value === project.status)?.label || project.status 
+                            {{
+                                statusOptions.find(status => status.value === project.status)?.label || project.status
                             }}
                         </div>
                     </div>
                     <p>{{ project.description }}</p>
                     <div class="flex justify-between items-center mt-4">
-                        <button 
-                            @click="openProjectFolder(project.location)" 
+                        <button
+                            @click="openProjectFolder(project.location)"
                             class="btn btn-ghost btn-sm"
                             title="Open Project Folder"
                         >
@@ -186,15 +179,15 @@ fetchProjects();
                             </svg>
                         </button>
                         <div class="flex space-x-2">
-                            <button 
-                                @click="startEditProject(project)" 
+                            <button
+                                @click="startEditProject(project)"
                                 class="btn btn-ghost btn-sm"
                                 title="Edit Project"
                             >
                                 <PencilSquareIcon class="h-5 w-5" />
                             </button>
-                            <button 
-                                @click="deleteProject(project.id)" 
+                            <button
+                                @click="deleteProject(project.id)"
                                 class="btn btn-ghost btn-sm text-error"
                                 title="Delete Project"
                             >

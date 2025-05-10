@@ -9,7 +9,7 @@ const DB_PATH: &str = "projects.db";
 pub fn create_project(name: String, description: String, location: String, status: ProjectStatus) -> Result<Project, String> {
     let db = Database::new(DB_PATH).map_err(|e| e.to_string())?;
     let project = Project::new(name, description, location, status);
-    
+
     db.create_project(&project).map_err(|e| e.to_string())?;
     Ok(project)
 }
@@ -23,7 +23,7 @@ pub fn get_projects() -> Result<Vec<Project>, String> {
 #[command]
 pub fn update_project(id: String, name: Option<String>, description: Option<String>, location: Option<String>, status: Option<ProjectStatus>) -> Result<Project, String> {
     let db = Database::new(DB_PATH).map_err(|e| e.to_string())?;
-    
+
     // First, get the existing project
     let mut existing_projects = db.get_projects().map_err(|e| e.to_string())?;
     let mut existing_project = existing_projects.iter_mut()
@@ -59,11 +59,28 @@ pub fn delete_project(id: String) -> Result<bool, String> {
 
 #[tauri::command]
 pub fn open_folder(location: String) -> Result<(), String> {
-    std::process::Command::new("xdg-open")
-        .arg(location)
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    // Use std::process::Command to launch the editor
+    if cfg!(windows) {
+        std::process::Command::new("explorer")
+            .arg(location)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    } else if cfg!(unix) {
+        std::process::Command::new("xdg-open")
+            .arg(location)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
+            .arg(location)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    } else {
+        return Err("Unsupported OS".to_string());
+    }
 }
 
 #[tauri::command]
@@ -86,6 +103,6 @@ pub fn open_in_editor(editor: String, location: String) -> Result<(), String> {
         .arg(location)
         .spawn()
         .map_err(|e| e.to_string())?;
-    
+
     Ok(())
 }
