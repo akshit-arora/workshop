@@ -3,6 +3,8 @@ import Projects from '../views/Projects.vue'
 import Dashboard from '../views/Dashboard.vue'
 import Database from '../views/Database.vue'
 import Settings from '../views/Settings.vue'
+import Tools from '../views/Tools.vue'
+import JSONFormatter from '../views/tools/JSONFormatter.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -26,6 +28,16 @@ const router = createRouter({
       path: '/settings',
       name: 'settings',
       component: Settings
+    },
+    {
+      path: '/tools',
+      name: 'tools',
+      component: Tools
+    },
+    {
+      path: '/tools/json-formatter',
+      name: 'json-formatter',
+      component: JSONFormatter
     }
   ]
 })

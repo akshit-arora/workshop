@@ -11,27 +11,28 @@ const baseMenuItems = ref([
 
 const additionalMenuItems = ref([
     { icon: '💻', label: 'Database Viewer', route: '/database' },
-    { icon: '📝', label: 'Log Viewer', route: '/logs' }
+    { icon: '📝', label: 'Log Viewer', route: '/logs' },
+    { icon: '🛠️', label: 'Tools', route: '/tools' }
 ]);
 
 const menuItems = computed(() => {
     const selectedProject = localStorage.getItem('selectedProject');
-    return selectedProject 
-        ? [...baseMenuItems.value, ...additionalMenuItems.value] 
+    return selectedProject
+        ? [...baseMenuItems.value, ...additionalMenuItems.value]
         : baseMenuItems.value;
 });
 </script>
 
 <template>
-    <aside 
+    <aside
         class="min-h-screen transition-all duration-100 relative bg-base-200"
         :class="{ 'w-64': !isCollapsed, 'w-20': isCollapsed }"
-    >   
+    >
         <nav class="p-2">
             <ul class="menu bg-base-200 rounded-box">
                 <li v-for="item in menuItems" :key="item.route">
-                    <router-link 
-                        :to="item.route" 
+                    <router-link
+                        :to="item.route"
                         class="flex items-center gap-4"
                         :class="{ 'active': $route.path === item.route }"
                     >
