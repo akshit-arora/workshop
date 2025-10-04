@@ -1,32 +1,40 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, defineOptions } from 'vue';
-import { 
-    PlayIcon, 
-    BookmarkIcon, 
-    PencilSquareIcon, 
-    DocumentDuplicateIcon, 
-    TrashIcon 
+import { invoke } from '@tauri-apps/api/core';
+import {
+    PlayIcon,
+    BookmarkIcon,
+    PencilSquareIcon,
+    DocumentDuplicateIcon,
+    TrashIcon
 } from '@heroicons/vue/24/outline';
 
-// Dummy data for tables list
-const tables = ref([
-    'users',
-    'projects',
-    'tasks',
-    'settings',
-    'analytics',
-    'logs'
-]);
+const tables = ref<string[]>([]);
+
+const fetchTables = async () => {
+    try {
+        const projectId = localStorage.getItem('selectedProject') || '';
+        if (!projectId) return;
+
+        const result = await invoke('get_project_tables', { projectId: JSON.parse(projectId).id });
+        tables.value = result as string[];
+    } catch (error) {
+        console.error('Failed to fetch tables:', error);
+        tables.value = [];
+    }
+};
 
 const searchQuery = ref('');
 const filteredTables = computed(() => {
-    return tables.value.filter(table => 
+    return tables.value.filter(table =>
         table.toLowerCase().includes(searchQuery.value.toLowerCase())
     );
 });
 
 const selectedTable = ref('users');
-const queryInput = ref('SELECT * FROM users');
+const queryInput = ref('');
+
+const queryPlaceholder = computed(() => `SELECT * FROM ${selectedTable.value} WHERE...`);
 
 // Saved queries management
 const savedQueries = ref([
@@ -65,12 +73,20 @@ const closeDropdown = () => {
     showSaveQueryModal.value = false;
 };
 
-// Load saved queries from localStorage on mount
+// Load saved queries from localStorage and fetch tables on mount
 onMounted(() => {
     const saved = localStorage.getItem('savedQueries');
     if (saved) {
         savedQueries.value = JSON.parse(saved);
     }
+    fetchTables();
+});
+
+// Watch for project changes
+watch(() => localStorage.getItem('selectedProject'), () => {
+    fetchTables();
+    currentPage.value = 1;
+    fetchTableData();
 });
 
 // Save to localStorage when queries change
@@ -81,25 +97,50 @@ const saveToPersistentStorage = () => {
 // Watch for changes in savedQueries
 watch(savedQueries, saveToPersistentStorage, { deep: true });
 
-// Dummy data for table content
+// Table data state
 const tableData = ref({
-    headers: ['id', 'name', 'email', 'created_at'],
-    rows: [
-        { id: 1, name: 'John Doe', email: 'john@example.com', created_at: '2024-03-15' },
-        { id: 2, name: 'Jane Smith', email: 'jane@example.com', created_at: '2024-03-14' },
-        { id: 3, name: 'Bob Johnson', email: 'bob@example.com', created_at: '2024-03-13' },
-        { id: 4, name: 'Alice Brown', email: 'alice@example.com', created_at: '2024-03-12' },
-        { id: 5, name: 'Charlie Wilson', email: 'charlie@example.com', created_at: '2024-03-11' }
-    ]
+    columns: [] as string[],
+    rows: [] as Record<string, string>[],
+    total: 0
 });
 
-const tableColumns = computed(() => {
-    return Object.keys(tableData.value.rows[0]);
-});
+// Pagination state
+const currentPage = ref(1);
+const perPage = ref(20);
+const pageSizeOptions = [20, 50, 100];
+
+const handlePageSizeChange = (event: Event) => {
+    const size = Number((event.target as HTMLSelectElement).value);
+    perPage.value = size;
+    currentPage.value = 1; // Reset to first page when changing page size
+    fetchTableData();
+};
+
+const tableColumns = computed(() => tableData.value.columns);
+
+const fetchTableData = async () => {
+    try {
+        const projectId = localStorage.getItem('selectedProject') || '';
+        if (!projectId) return;
+
+        const result = await invoke('get_table_data', {
+            projectId: JSON.parse(projectId).id,
+            tableName: selectedTable.value,
+            page: currentPage.value,
+            perPage: perPage.value
+        });
+
+        tableData.value = result as typeof tableData.value;
+    } catch (error) {
+        console.error('Failed to fetch table data:', error);
+        tableData.value = { columns: [], rows: [], total: 0 };
+    }
+};
 
 const selectTable = (table: string) => {
     selectedTable.value = table;
-    queryInput.value = `SELECT * FROM ${table}`;
+    currentPage.value = 1; // Reset to first page
+    fetchTableData();
 };
 
 const executeQuery = () => {
@@ -129,7 +170,7 @@ const cloneRecord = (row: any) => {
         <div class="w-64 bg-base-200 border-r border-base-300 p-4">
             <h2 class="text-lg font-semibold mb-4">Tables</h2>
             <div class="form-control mb-4">
-                <input 
+                <input
                     type="text"
                     v-model="searchQuery"
                     placeholder="Search tables..."
@@ -138,7 +179,7 @@ const cloneRecord = (row: any) => {
             </div>
             <ul class="menu bg-base-200 rounded-box">
                 <li v-for="table in filteredTables" :key="table">
-                    <a 
+                    <a
                         @click="selectTable(table)"
                         :class="{ 'active': selectedTable === table }"
                     >
@@ -171,7 +212,7 @@ const cloneRecord = (row: any) => {
                     <input
                         v-model="queryInput"
                         class="input input-bordered join-item w-full font-mono"
-                        placeholder="Enter your SQL query here..."
+                        :placeholder="queryPlaceholder"
                     />
                     <div class="join-item flex items-center space-x-2">
                         <div class="tooltip" data-tip="Execute Query">
@@ -188,40 +229,80 @@ const cloneRecord = (row: any) => {
                 </div>
             </div>
 
-            <!-- Results table -->
-            <div class="overflow-x-auto bg-base-100 rounded-box">
-                <table class="table table-zebra">
-                    <thead>
-                        <tr>
-                            <th v-for="column in tableColumns" :key="column">{{ column }}</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="row in tableData.rows" :key="row.id">
-                            <td v-for="column in tableColumns" :key="column">
-                                {{ row[column] }}
-                            </td>
-                            <td class="space-x-2">
-                                <div class="tooltip" data-tip="Edit Record">
-                                    <button @click="editRecord(row)" class="btn btn-ghost btn-xs">
-                                        <PencilSquareIcon class="h-4 w-4" />
-                                    </button>
-                                </div>
-                                <div class="tooltip" data-tip="Clone Record">
-                                    <button @click="cloneRecord(row)" class="btn btn-ghost btn-xs">
-                                        <DocumentDuplicateIcon class="h-4 w-4" />
-                                    </button>
-                                </div>
-                                <div class="tooltip" data-tip="Delete Record">
-                                    <button @click="deleteRecord(row)" class="btn btn-error btn-xs">
-                                        <TrashIcon class="h-4 w-4" />
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+                        <!-- Results table -->
+            <div class="bg-base-100 rounded-box flex-1 flex flex-col min-h-0">
+                <div class="overflow-auto flex-1">
+                    <table class="table table-zebra w-full">
+                        <thead class="sticky top-0 bg-base-100 z-10">
+                            <tr>
+                                <th v-for="column in tableColumns" :key="column" class="whitespace-nowrap">
+                                    {{ column }}
+                                </th>
+                                <th class="sticky right-0 bg-base-100 w-28">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="row in tableData.rows" :key="row.id || Math.random()">
+                                <td v-for="column in tableColumns" :key="column" class="whitespace-nowrap">
+                                    {{ row[column] }}
+                                </td>
+                                <td class="sticky right-0 bg-base-100 w-28">
+                                    <div class="flex items-center justify-center space-x-2">
+                                        <div class="tooltip" data-tip="Edit Record">
+                                            <button @click="editRecord(row)" class="btn btn-ghost btn-xs">
+                                                <PencilSquareIcon class="h-4 w-4" />
+                                            </button>
+                                        </div>
+                                        <div class="tooltip" data-tip="Clone Record">
+                                            <button @click="cloneRecord(row)" class="btn btn-ghost btn-xs">
+                                                <DocumentDuplicateIcon class="h-4 w-4" />
+                                            </button>
+                                        </div>
+                                        <div class="tooltip" data-tip="Delete Record">
+                                            <button @click="deleteRecord(row)" class="btn btn-error btn-xs">
+                                                <TrashIcon class="h-4 w-4" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="flex justify-between items-center p-4">
+                    <div class="flex items-center gap-4">
+                        <select
+                            class="select select-bordered select-sm w-24"
+                            :value="perPage"
+                            @change="handlePageSizeChange"
+                        >
+                            <option v-for="size in pageSizeOptions" :key="size" :value="size">
+                                {{ size }} rows
+                            </option>
+                        </select>
+                        <div class="text-sm text-base-content/70">
+                            Showing {{ (currentPage - 1) * perPage + 1 }} to {{ Math.min(currentPage * perPage, tableData.total) }} of {{ tableData.total }} entries
+                        </div>
+                    </div>
+                    <div class="join">
+                        <button
+                            class="join-item btn btn-sm"
+                            :disabled="currentPage === 1"
+                            @click="currentPage--; fetchTableData();"
+                        >
+                            Previous
+                        </button>
+                        <button
+                            class="join-item btn btn-sm"
+                            :disabled="currentPage * perPage >= tableData.total"
+                            @click="currentPage++; fetchTableData();"
+                        >
+                            Next
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -234,7 +315,7 @@ const cloneRecord = (row: any) => {
                 <label class="label">
                     <span class="label-text">Query Name</span>
                 </label>
-                <input 
+                <input
                     v-model="newQueryName"
                     type="text"
                     placeholder="Enter query name"

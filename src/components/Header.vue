@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Header component
-import { inject } from 'vue';
+import { inject, Ref } from 'vue';
 import { ref, onMounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -9,17 +9,27 @@ const toggleSidebar = inject('toggleSidebar');
 
 // Project-related variables
 const projects = inject('projects');
-const selectedProject = inject('selectedProject');
+const selectedProject = inject<Ref<Project | null>>('selectedProject');
 const projectDropdown = ref(null);
 
 // Handle project selection
-const selectProject = (project) => {
+interface Project {
+    id: string | number;
+    name: string;
+    // Add other properties if needed
+}
+
+const selectProject = (project: Project) => {
     selectedProject.value = project;
     localStorage.setItem('selectedProject', JSON.stringify(project));
 
     // Close dropdown by removing focus
     if (projectDropdown.value) {
-        projectDropdown.value.blur();
+        (projectDropdown.value as HTMLDivElement).blur();
+    }
+
+    if (selectedProject.value != null) {
+        console.log('Selected project:', selectedProject.value);
     }
 };
 

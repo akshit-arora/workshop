@@ -6,8 +6,6 @@ use thiserror::Error;
 pub enum DatabaseError {
     #[error("Rusqlite error: {0}")]
     RusqliteError(#[from] rusqlite::Error),
-    #[error("Project not found")]
-    ProjectNotFound,
 }
 
 pub struct Database {
@@ -34,13 +32,13 @@ impl Database {
 
     pub fn create_project(&self, project: &Project) -> Result<(), DatabaseError> {
         self.conn.execute(
-            "INSERT INTO projects (id, name, description, location, status, created_at, updated_at) 
+            "INSERT INTO projects (id, name, description, location, status, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
-                project.id, 
-                project.name, 
-                project.description, 
-                project.location, 
+                project.id,
+                project.name,
+                project.description,
+                project.location,
                 format!("{:?}", project.status),
                 project.created_at,
                 project.updated_at
@@ -79,13 +77,13 @@ impl Database {
 
     pub fn update_project(&self, id: &str, updates: &Project) -> Result<(), DatabaseError> {
         self.conn.execute(
-            "UPDATE projects 
-             SET name = ?1, description = ?2, location = ?3, status = ?4, updated_at = ?5 
+            "UPDATE projects
+             SET name = ?1, description = ?2, location = ?3, status = ?4, updated_at = ?5
              WHERE id = ?6",
             params![
-                updates.name, 
-                updates.description, 
-                updates.location, 
+                updates.name,
+                updates.description,
+                updates.location,
                 format!("{:?}", updates.status),
                 updates.updated_at,
                 id
@@ -97,5 +95,31 @@ impl Database {
     pub fn delete_project(&self, id: &str) -> Result<bool, DatabaseError> {
         let affected = self.conn.execute("DELETE FROM projects WHERE id = ?1", params![id])?;
         Ok(affected > 0)
+    }
+
+    pub fn get_project_by_id(&self, id: &str) -> Result<Option<Project>, DatabaseError> {
+        let mut stmt = self.conn.prepare("SELECT * FROM projects WHERE id = ?1")?;
+        let mut rows = stmt.query(params![id])?;
+        if let Some(row) = rows.next()? {
+            let project = Project {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                location: row.get(3)?,
+                status: match row.get::<_, String>(4)?.as_str() {
+                    "InProgress" => ProjectStatus::InProgress,
+                    "Completed" => ProjectStatus::Completed,
+                    "InitialStage" => ProjectStatus::InitialStage,
+                    "OnHold" => ProjectStatus::OnHold,
+                    "Abandoned" => ProjectStatus::Abandoned,
+                    _ => ProjectStatus::InProgress,
+                },
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            };
+            Ok(Some(project))
+        } else {
+            Ok(None)
+        }
     }
 }
