@@ -181,6 +181,31 @@ const cloneRecord = (row: any) => {
     console.log('Cloning record:', row);
     // Here you would implement the clone logic
 };
+
+// Row details modal state
+const showDetailsModal = ref(false);
+const selectedRowDetails = ref<Record<string, string> | null>(null);
+
+const showRowDetails = (row: Record<string, string>) => {
+    selectedRowDetails.value = row;
+    showDetailsModal.value = true;
+};
+
+// Handle escape key press
+const handleKeydown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape' && showDetailsModal.value) {
+        showDetailsModal.value = false;
+    }
+};
+
+// Add and remove event listener
+onMounted(() => {
+    document.addEventListener('keydown', handleKeydown);
+});
+
+onUnmounted(() => {
+    document.removeEventListener('keydown', handleKeydown);
+});
 </script>
 
 <template>
@@ -270,24 +295,29 @@ const cloneRecord = (row: any) => {
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr v-for="row in tableData.rows" :key="row.id || Math.random()">
+                                <tr
+                                    v-for="row in tableData.rows"
+                                    :key="row.id || Math.random()"
+                                    @click="showRowDetails(row)"
+                                    class="cursor-pointer hover:bg-base-200"
+                                >
                                     <td v-for="column in tableColumns" :key="column" class="whitespace-nowrap">
                                         {{ row[column] }}
                                     </td>
                                     <td class="sticky right-0 bg-base-100 w-28">
                                         <div class="flex items-center justify-center space-x-2">
                                             <div class="tooltip" data-tip="Edit Record">
-                                                <button @click="editRecord(row)" class="btn btn-ghost btn-xs">
+                                                <button @click.stop="editRecord(row)" class="btn btn-ghost btn-xs">
                                                     <PencilSquareIcon class="h-4 w-4" />
                                                 </button>
                                             </div>
                                             <div class="tooltip" data-tip="Clone Record">
-                                                <button @click="cloneRecord(row)" class="btn btn-ghost btn-xs">
+                                                <button @click.stop="cloneRecord(row)" class="btn btn-ghost btn-xs">
                                                     <DocumentDuplicateIcon class="h-4 w-4" />
                                                 </button>
                                             </div>
                                             <div class="tooltip" data-tip="Delete Record">
-                                                <button @click="deleteRecord(row)" class="btn btn-error btn-xs">
+                                                <button @click.stop="deleteRecord(row)" class="btn btn-error btn-xs">
                                                     <TrashIcon class="h-4 w-4" />
                                                 </button>
                                             </div>
@@ -357,6 +387,27 @@ const cloneRecord = (row: any) => {
             </div>
         </div>
         <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+
+    <!-- Row Details Modal -->
+    <dialog :open="showDetailsModal" class="modal">
+        <div class="modal-box w-11/12 max-w-2xl">
+            <h3 class="font-bold text-lg mb-4">Row Details</h3>
+            <div class="overflow-y-auto max-h-[70vh]">
+                <div v-if="selectedRowDetails" class="grid gap-4">
+                    <div v-for="column in tableColumns" :key="column" class="grid grid-cols-3 gap-4 items-start p-3 rounded-lg hover:bg-base-200">
+                        <div class="font-semibold text-base-content/70">{{ column }}</div>
+                        <div class="col-span-2 font-mono break-all">{{ selectedRowDetails[column] }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-action">
+                <button @click="showDetailsModal = false" class="btn">Close</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop" @click="showDetailsModal = false">
             <button>close</button>
         </form>
     </dialog>
