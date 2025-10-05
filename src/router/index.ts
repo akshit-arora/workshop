@@ -4,6 +4,7 @@ import Dashboard from '../views/Dashboard.vue'
 import Database from '../views/Database.vue'
 import Settings from '../views/Settings.vue'
 import Tools from '../views/Tools.vue'
+import LogViewer from '../views/LogViewer.vue'
 import JSONFormatter from '../views/tools/JSONFormatter.vue'
 
 const router = createRouter({
@@ -38,6 +39,11 @@ const router = createRouter({
       path: '/tools/json-formatter',
       name: 'json-formatter',
       component: JSONFormatter
+    },
+    {
+      path: '/logs',
+      name: 'logs',
+      component: LogViewer
     }
   ]
 })
