@@ -36,6 +36,7 @@ pub fn run() {
             commands::project_commands::get_projects,
             commands::db_tool_commands::get_project_tables,
             commands::db_tool_commands::get_table_data,
+            commands::db_tool_commands::execute_query,
             commands::project_commands::get_project_config,
             commands::project_commands::update_project,
             commands::project_commands::delete_project,

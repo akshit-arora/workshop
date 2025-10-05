@@ -143,9 +143,28 @@ const selectTable = (table: string) => {
     fetchTableData();
 };
 
-const executeQuery = () => {
-    // In a real application, this would send the query to the backend
-    console.log('Executing query:', queryInput.value);
+const executeQuery = async () => {
+    try {
+        const projectId = localStorage.getItem('selectedProject') || '';
+        if (!projectId) return;
+
+        const query = queryInput.value.trim();
+        if (!query) {
+            fetchTableData();
+            return;
+        };
+
+        const result = await invoke('execute_query', {
+            projectId: JSON.parse(projectId).id,
+            query: `SELECT * FROM ${selectedTable.value} WHERE ${query}`
+        });
+
+        // Update the table data with the query results
+        tableData.value = result as typeof tableData.value;
+    } catch (error) {
+        console.error('Failed to execute query:', error);
+        tableData.value = { columns: [], rows: [], total: 0 };
+    }
 };
 
 const editRecord = (row: any) => {
@@ -167,32 +186,35 @@ const cloneRecord = (row: any) => {
 <template>
     <div class="flex h-full">
         <!-- Tables sidebar -->
-        <div class="w-64 bg-base-200 border-r border-base-300 p-4">
-            <h2 class="text-lg font-semibold mb-4">Tables</h2>
-            <div class="form-control mb-4">
-                <input
+        <div class="w-64 bg-base-200 border-r border-base-300 flex flex-col h-full m-4">
+            <div class="p-4 flex-shrink-0">
+                <h2 class="text-lg font-semibold mb-4">Tables</h2>
+                <div class="form-control mb-4">
+                    <input
                     type="text"
                     v-model="searchQuery"
                     placeholder="Search tables..."
                     class="input input-bordered input-sm w-full"
-                />
+                ></div>
             </div>
-            <ul class="menu bg-base-200 rounded-box">
-                <li v-for="table in filteredTables" :key="table">
-                    <a
-                        @click="selectTable(table)"
-                        :class="{ 'active': selectedTable === table }"
-                    >
-                        {{ table }}
-                    </a>
-                </li>
-            </ul>
+            <div class="flex-1 overflow-y-auto">
+                <ul class="menu bg-base-200 rounded-box p-4">
+                    <li v-for="table in filteredTables" :key="table">
+                        <a
+                            @click="selectTable(table)"
+                            :class="{ 'active': selectedTable === table }"
+                        >
+                            {{ table }}
+                        </a>
+                    </li>
+                </ul>
+            </div>
         </div>
 
         <!-- Main content -->
-        <div class="flex-1 p-6">
+        <div class="flex-1 flex flex-col h-full">
             <!-- Query input -->
-            <div class="mb-6">
+            <div class="flex-shrink-0 py-6">
                 <div class="flex justify-between items-center mb-2">
                     <label class="label">
                         <span class="label-text">SQL Query</span>
@@ -213,6 +235,11 @@ const cloneRecord = (row: any) => {
                         v-model="queryInput"
                         class="input input-bordered join-item w-full font-mono"
                         :placeholder="queryPlaceholder"
+                        @keyup.enter="executeQuery"
+                        autocomplete="off"
+                        autocorrect="off"
+                        autocapitalize="off"
+                        spellcheck="false"
                     />
                     <div class="join-item flex items-center space-x-2">
                         <div class="tooltip" data-tip="Execute Query">
@@ -229,45 +256,47 @@ const cloneRecord = (row: any) => {
                 </div>
             </div>
 
-                        <!-- Results table -->
-            <div class="bg-base-100 rounded-box flex-1 flex flex-col min-h-0">
-                <div class="overflow-auto flex-1">
-                    <table class="table table-zebra w-full">
-                        <thead class="sticky top-0 bg-base-100 z-10">
-                            <tr>
-                                <th v-for="column in tableColumns" :key="column" class="whitespace-nowrap">
-                                    {{ column }}
-                                </th>
-                                <th class="sticky right-0 bg-base-100 w-28">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="row in tableData.rows" :key="row.id || Math.random()">
-                                <td v-for="column in tableColumns" :key="column" class="whitespace-nowrap">
-                                    {{ row[column] }}
-                                </td>
-                                <td class="sticky right-0 bg-base-100 w-28">
-                                    <div class="flex items-center justify-center space-x-2">
-                                        <div class="tooltip" data-tip="Edit Record">
-                                            <button @click="editRecord(row)" class="btn btn-ghost btn-xs">
-                                                <PencilSquareIcon class="h-4 w-4" />
-                                            </button>
+            <!-- Results table -->
+            <div class="bg-base-100 flex-1 flex flex-col min-h-0 p-6">
+                <div class="flex-1 relative">
+                    <div class="absolute inset-0 overflow-auto">
+                        <table class="table table-zebra">
+                            <thead class="sticky top-0 bg-base-100 z-10">
+                                <tr>
+                                    <th v-for="column in tableColumns" :key="column" class="whitespace-nowrap">
+                                        {{ column }}
+                                    </th>
+                                    <th class="sticky right-0 bg-base-100 w-28">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="row in tableData.rows" :key="row.id || Math.random()">
+                                    <td v-for="column in tableColumns" :key="column" class="whitespace-nowrap">
+                                        {{ row[column] }}
+                                    </td>
+                                    <td class="sticky right-0 bg-base-100 w-28">
+                                        <div class="flex items-center justify-center space-x-2">
+                                            <div class="tooltip" data-tip="Edit Record">
+                                                <button @click="editRecord(row)" class="btn btn-ghost btn-xs">
+                                                    <PencilSquareIcon class="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                            <div class="tooltip" data-tip="Clone Record">
+                                                <button @click="cloneRecord(row)" class="btn btn-ghost btn-xs">
+                                                    <DocumentDuplicateIcon class="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                            <div class="tooltip" data-tip="Delete Record">
+                                                <button @click="deleteRecord(row)" class="btn btn-error btn-xs">
+                                                    <TrashIcon class="h-4 w-4" />
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div class="tooltip" data-tip="Clone Record">
-                                            <button @click="cloneRecord(row)" class="btn btn-ghost btn-xs">
-                                                <DocumentDuplicateIcon class="h-4 w-4" />
-                                            </button>
-                                        </div>
-                                        <div class="tooltip" data-tip="Delete Record">
-                                            <button @click="deleteRecord(row)" class="btn btn-error btn-xs">
-                                                <TrashIcon class="h-4 w-4" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
                 <!-- Pagination -->

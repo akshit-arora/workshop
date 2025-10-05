@@ -166,3 +166,39 @@ pub fn get_table_data(project_id: String, table_name: String, page: u32, per_pag
         rows: data,
     })
 }
+
+#[command(rename_all = "camelCase")]
+pub fn execute_query(project_id: String, query: String) -> Result<TableData, String> {
+    let pool = connect_database(&project_id)?;
+    let mut conn = pool.get_conn()
+        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+
+    // Execute the custom query
+    let rows: Vec<mysql::Row> = conn.query(&query)
+        .map_err(|e| format!("Failed to execute query: {}", e))?;
+
+    // Convert rows to Vec<HashMap<String, String>>
+    let mut data = Vec::new();
+    let mut columns = Vec::new();
+
+    if let Some(first_row) = rows.first() {
+        columns = first_row.columns().iter()
+            .map(|col| col.name_str().to_string())
+            .collect();
+    }
+
+    for row in rows {
+        let mut row_data = HashMap::new();
+        for (i, column) in columns.iter().enumerate() {
+            let value = convert_mysql_value(&row[i]);
+            row_data.insert(column.clone(), value);
+        }
+        data.push(row_data);
+    }
+
+    Ok(TableData {
+        total: data.len() as u32,
+        columns,
+        rows: data,
+    })
+}

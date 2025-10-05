@@ -34,11 +34,11 @@ fetchProjects();
 </script>
 
 <template>
-    <div class="min-h-screen bg-base-300">
-        <Header />
-        <div class="flex">
-            <Sidebar />
-            <main class="flex-1 p-6">
+    <div class="h-screen flex flex-col overflow-hidden bg-base-300">
+        <Header class="flex-shrink-0" />
+        <div class="flex flex-1 overflow-hidden">
+            <Sidebar class="flex-shrink-0" />
+            <main class="flex-1 overflow-hidden">
                 <router-view></router-view>
             </main>
         </div>
