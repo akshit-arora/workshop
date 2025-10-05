@@ -59,7 +59,7 @@ const openProjectInEditor = async () => {
 </script>
 
 <template>
-    <div class="space-y-6">
+    <div class="space-y-6 p-6">
         <WelcomeSection />
 
         <!-- Selected Project Section -->

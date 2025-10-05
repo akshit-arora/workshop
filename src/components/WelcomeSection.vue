@@ -14,14 +14,12 @@ onMounted(() => {
 </script>
 
 <template>
-    <div class=" p-6">
-        <h1 class="text-3xl font-bold mb-4">
-            {{ greeting }}, {{ username }}
-        </h1>
-        <p class="text-base-content/70 max-w-xl">
-            Welcome to your Workshop dashboard.
-        </p>
-    </div>
+    <h1 class="text-3xl font-bold mb-4">
+        {{ greeting }}, {{ username }}
+    </h1>
+    <p class="text-base-content/70 max-w-xl">
+        Welcome to your Workshop dashboard.
+    </p>
 </template>
 
 <style scoped>

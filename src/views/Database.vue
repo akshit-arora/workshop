@@ -186,7 +186,7 @@ const cloneRecord = (row: any) => {
 <template>
     <div class="flex h-full">
         <!-- Tables sidebar -->
-        <div class="w-64 bg-base-200 border-r border-base-300 flex flex-col h-full m-4">
+        <div class="w-64 rounded-box bg-base-200 border-r border-base-300 flex flex-col h-full m-4">
             <div class="p-4 flex-shrink-0">
                 <h2 class="text-lg font-semibold mb-4">Tables</h2>
                 <div class="form-control mb-4">
@@ -257,7 +257,7 @@ const cloneRecord = (row: any) => {
             </div>
 
             <!-- Results table -->
-            <div class="bg-base-100 flex-1 flex flex-col min-h-0 p-6">
+            <div class="bg-base-100 flex-1 flex flex-col min-h-0 p-6 rounded-box">
                 <div class="flex-1 relative">
                     <div class="absolute inset-0 overflow-auto">
                         <table class="table table-zebra">
