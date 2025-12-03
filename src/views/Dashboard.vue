@@ -1,59 +1,97 @@
 <script setup lang="ts">
-import { ref, onMounted, inject } from 'vue';
+import { ref, inject, computed, type Ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { FolderIcon, CodeBracketIcon } from '@heroicons/vue/24/outline';
 import WelcomeSection from '../components/WelcomeSection.vue';
 
-const selectedProject = inject('selectedProject');
-const defaultEditor = ref(localStorage.getItem('defaultEditor') || 'VSCode');
+// Types
+interface Project {
+    id: string | number;
+    name: string;
+    description: string;
+    location: string;
+    status: ProjectStatus;
+}
 
-const statusBadgeClass = (status: string) => {
-    const statusClasses = {
-        'InProgress': 'badge-primary',
-        'Completed': 'badge-success',
-        'InitialStage': 'badge-warning',
-        'OnHold': 'badge-neutral',
-        'Abandoned': 'badge-error'
-    };
-    return statusClasses[status] || 'badge-ghost';
+type ProjectStatus = 'InProgress' | 'Completed' | 'InitialStage' | 'OnHold' | 'Abandoned';
+
+interface EditorConfig {
+    name: string;
+    command: string;
+    icon?: string;
+}
+
+// Constants
+const EDITOR_CONFIGS: Record<string, EditorConfig> = {
+    'VSCode': { name: 'VS Code', command: 'code' },
+    'Sublime Text': { name: 'Sublime Text', command: 'subl' },
+    'PHPStorm': { name: 'PhpStorm', command: 'phpstorm' },
+    'Windsurf': { name: 'Windsurf', command: 'windsurf' },
+    'Zed': { name: 'Zed', command: 'zed' }
+} as const;
+
+const STATUS_CLASSES: Record<ProjectStatus, string> = {
+    'InProgress': 'badge-primary',
+    'Completed': 'badge-success',
+    'InitialStage': 'badge-warning',
+    'OnHold': 'badge-neutral',
+    'Abandoned': 'badge-error'
+} as const;
+
+const STATUS_LABELS: Record<ProjectStatus, string> = {
+    'InProgress': 'In Progress',
+    'Completed': 'Completed',
+    'InitialStage': 'Initial Stage',
+    'OnHold': 'On Hold',
+    'Abandoned': 'Abandoned'
+} as const;
+
+// State & Refs
+const projectRef = inject<Ref<Project | null>>('selectedProject', ref(null));
+const currentProject = computed(() => projectRef?.value);
+const defaultEditor = ref<keyof typeof EDITOR_CONFIGS>(
+    localStorage.getItem('defaultEditor') as keyof typeof EDITOR_CONFIGS || 'VSCode'
+);
+
+// Methods
+const getStatusBadgeClass = (status: ProjectStatus): string => {
+    return STATUS_CLASSES[status] || 'badge-ghost';
 };
 
-const openProjectFolder = async () => {
-    if (selectedProject.value) {
-        try {
-            await invoke('open_folder', { location: selectedProject.value.location });
-        } catch (error) {
-            console.error('Failed to open project folder', error);
-        }
+const getStatusLabel = (status: ProjectStatus): string => {
+    return STATUS_LABELS[status] || status;
+};
+
+const openProjectFolder = async (): Promise<void> => {
+    const project = currentProject.value;
+    if (!project) return;
+
+    try {
+        await invoke('open_folder', {
+            location: project.location
+        });
+    } catch (error) {
+        console.error('Failed to open project folder:', error);
     }
 };
 
-const openProjectInEditor = async () => {
-    if (selectedProject.value) {
-        try {
-            // Mapping of editors to their command-line launch commands
-            const editorCommands = {
-                'VSCode': 'code',
-                'Sublime Text': 'subl',
-                'PHPStorm': 'phpstorm',
-                'Windsurf': 'windsurf',
-                'Zed': 'zed'
-            };
+const openProjectInEditor = async (): Promise<void> => {
+    const project = currentProject.value;
+    if (!project) return;
 
-            // Get the command for the selected editor
-            const command = editorCommands[defaultEditor.value];
-
-            if (command) {
-                // Use Tauri invoke to run the editor command
-                await invoke('open_in_editor', {
-                    editor: command,
-                    location: selectedProject.value.location
-                });
-            } else {
-                console.error('Unsupported editor:', defaultEditor.value);
-            }
-        } catch (error) {
-            console.error('Failed to open project in editor', error);
+    try {
+        const editorConfig = EDITOR_CONFIGS[defaultEditor.value];
+        if (!editorConfig) {
+            console.error('Unsupported editor:', defaultEditor.value);
+            return;
         }
+
+        await invoke('open_in_editor', {
+            editor: editorConfig.command,
+            location: project.location
+        });
+    } catch (error) {
+        console.error('Failed to open project in editor:', error);
     }
 };
 </script>
@@ -62,56 +100,51 @@ const openProjectInEditor = async () => {
     <div class="space-y-6 p-6">
         <WelcomeSection />
 
+        <!-- No Project Selected State -->
+        <div v-if="!currentProject" class="text-center py-8">
+            <h2 class="text-xl font-semibold mb-2">No Project Selected</h2>
+            <p class="text-base-content/70">Select a project from the header to view its details</p>
+        </div>
+
         <!-- Selected Project Section -->
-        <div
-            v-if="selectedProject"
-            class="card bg-base-100 shadow-xl"
-        >
+        <div v-else class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <div class="flex justify-between items-center">
                     <h2 class="card-title">Current Project</h2>
                     <div
                         class="badge"
-                        :class="statusBadgeClass(selectedProject.status)"
+                        :class="getStatusBadgeClass(currentProject.status)"
                     >
-                        {{
-                            {
-                                'InProgress': 'In Progress',
-                                'Completed': 'Completed',
-                                'InitialStage': 'Initial Stage',
-                                'OnHold': 'On Hold',
-                                'Abandoned': 'Abandoned'
-                            }[selectedProject.status] || selectedProject.status
-                        }}
+                        {{ getStatusLabel(currentProject.status) }}
                     </div>
                 </div>
+
                 <div class="grid md:grid-cols-2 gap-4 mt-4">
                     <div>
-                        <p class="font-bold">{{ selectedProject.name }}</p>
-                        <p>{{ selectedProject.description || 'No description provided' }}</p>
+                        <p class="font-bold">{{ currentProject.name }}</p>
+                        <p>{{ currentProject.description || 'No description provided' }}</p>
                     </div>
                 </div>
 
                 <div class="card-actions mt-4 flex justify-between items-center">
                     <div class="flex space-x-2">
                         <button
+                            type="button"
                             @click="openProjectFolder"
-                            class="btn btn-ghost btn-sm"
+                            class="btn btn-ghost btn-sm gap-2"
                             title="Open Project Folder"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6A2.25 2.25 0 0 1 6 3.75h3.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12a1.5 1.5 0 0 0 1.06.44H18A2.25 2.25 0 0 1 20.25 9v.776" />
-                            </svg>
+                            <FolderIcon class="w-5 h-5" />
+                            <span>Open Folder</span>
                         </button>
                         <button
+                            type="button"
                             @click="openProjectInEditor"
-                            class="btn btn-ghost btn-sm"
-                            :title="`Open in ${defaultEditor}`"
+                            class="btn btn-ghost btn-sm gap-2"
+                            :title="`Open in ${EDITOR_CONFIGS[defaultEditor].name}`"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M14.25 9.75 16.5 12l-2.25 2.25m-4.5 0L7.5 12l2.25-2.25M6 20.25h12A2.25 2.25 0 0 0 20.25 18V6A2.25 2.25 0 0 0 18 3.75H6A2.25 2.25 0 0 0 3.75 6v12A2.25 2.25 0 0 0 6 20.25Z" />
-                            </svg>
-                            <span class="ml-2 text-xs">{{ defaultEditor }}</span>
+                            <CodeBracketIcon class="w-5 h-5" />
+                            <span class="text-xs">{{ EDITOR_CONFIGS[defaultEditor].name }}</span>
                         </button>
                     </div>
                 </div>
@@ -121,10 +154,16 @@ const openProjectInEditor = async () => {
 </template>
 
 <style scoped>
-.truncate {
-    max-width: 250px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+.card-body > * + * {
+    margin-top: 1rem;
+}
+
+.badge {
+    text-transform: capitalize;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.btn {
+    transition: background-color 0.2s, color 0.2s;
 }
 </style>

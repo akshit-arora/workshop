@@ -1,9 +1,9 @@
-use tauri::command;
-use mysql::*;
 use mysql::prelude::*;
-use std::fs;
-use std::collections::HashMap;
+use mysql::*;
 use serde::Serialize;
+use std::collections::HashMap;
+use std::fs;
+use tauri::command;
 
 use crate::commands::project_commands::get_project_config;
 use crate::database::Database;
@@ -16,12 +16,13 @@ fn convert_mysql_value(value: &mysql::Value) -> String {
         mysql::Value::UInt(n) => n.to_string(),
         mysql::Value::Float(n) => n.to_string(),
         mysql::Value::Double(n) => n.to_string(),
-        mysql::Value::Date(y, m, d, h, i, s, _) =>
-            format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", y, m, d, h, i, s),
+        mysql::Value::Date(y, m, d, h, i, s, _) => {
+            format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", y, m, d, h, i, s)
+        }
         mysql::Value::Time(neg, d, h, i, s, _) => {
             let sign = if *neg { "-" } else { "" };
             format!("{}{}.{:02}:{:02}:{:02}", sign, d, h, i, s)
-        },
+        }
         _ => "NULL".to_string(),
     }
 }
@@ -49,7 +50,12 @@ fn connect_database(project_id: &str) -> Result<Pool, String> {
 
     let project = match db.get_project_by_id(project_id) {
         Ok(Some(project)) => project,
-        Ok(None) => return Err(format!("Project with ID '{}' not found in database", project_id)),
+        Ok(None) => {
+            return Err(format!(
+                "Project with ID '{}' not found in database",
+                project_id
+            ))
+        }
         Err(e) => return Err(format!("Database error while fetching project: {}", e)),
     };
 
@@ -60,8 +66,8 @@ fn connect_database(project_id: &str) -> Result<Pool, String> {
     }
 
     // Read and parse .env file
-    let env_content = fs::read_to_string(&env_path)
-        .map_err(|e| format!("Failed to read .env file: {}", e))?;
+    let env_content =
+        fs::read_to_string(&env_path).map_err(|e| format!("Failed to read .env file: {}", e))?;
 
     let mut env_vars = HashMap::new();
     for line in env_content.lines() {
@@ -75,7 +81,8 @@ fn connect_database(project_id: &str) -> Result<Pool, String> {
 
     // Extract database configuration
     let get_env = |key: &str| -> Result<String, String> {
-        env_vars.get(key)
+        env_vars
+            .get(key)
             .ok_or_else(|| format!("{} not found in .env", key))
             .map(|s| s.to_string())
     };
@@ -94,14 +101,16 @@ fn connect_database(project_id: &str) -> Result<Pool, String> {
     // Build connection using OptsBuilder
     let opts = mysql::OptsBuilder::new()
         .ip_or_hostname(Some(host))
-        .tcp_port(port.parse().map_err(|e| format!("Invalid port number: {}", e))?)
+        .tcp_port(
+            port.parse()
+                .map_err(|e| format!("Invalid port number: {}", e))?,
+        )
         .db_name(Some(database))
         .user(Some(username))
         .pass(Some(password));
 
     // Try to establish connection
-    let pool = Pool::new(opts)
-        .map_err(|e| format!("Failed to connect to database: {}", e))?;
+    let pool = Pool::new(opts).map_err(|e| format!("Failed to connect to database: {}", e))?;
 
     Ok(pool)
 }
@@ -109,44 +118,90 @@ fn connect_database(project_id: &str) -> Result<Pool, String> {
 #[command]
 pub fn get_project_tables(project_id: String) -> Result<Vec<String>, String> {
     let pool = connect_database(&project_id)?;
-    let mut conn = pool.get_conn()
+    let mut conn = pool
+        .get_conn()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     // Query to get all tables
-    let tables: Vec<String> = conn.query_map(
-        "SHOW TABLES",
-        |table_name: String| table_name
-    ).map_err(|e| format!("Failed to query tables: {}", e))?;
+    let tables: Vec<String> = conn
+        .query_map("SHOW TABLES", |table_name: String| table_name)
+        .map_err(|e| format!("Failed to query tables: {}", e))?;
 
     Ok(tables)
 }
 
 #[command]
-pub fn get_table_data(project_id: String, table_name: String, page: u32, per_page: u32) -> Result<TableData, String> {
+pub fn get_table_data(
+    project_id: String,
+    table_name: String,
+    page: u32,
+    mut per_page: u32,
+    where_clause: Option<String>,
+) -> Result<TableData, String> {
     let pool = connect_database(&project_id)?;
-    let mut conn = pool.get_conn()
+    let mut conn = pool
+        .get_conn()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
+
+    let mut where_clause_for_select = String::new();
+    let mut where_clause_for_count = String::new();
+    let mut has_limit_in_where = false;
+
+    if let Some(clause) = where_clause {
+        if !clause.trim().is_empty() {
+            let upper_clause = clause.to_uppercase();
+            if let Some(index) = upper_clause.rfind("LIMIT") {
+                where_clause_for_count = format!(" WHERE {}", &clause[..index].trim());
+                where_clause_for_select = format!(" WHERE {}", clause);
+                has_limit_in_where = true;
+
+                let limit_part = &clause[index + 5..].trim();
+                if let Some(limit_str) = limit_part.split_whitespace().next() {
+                    if let Ok(limit_val) = limit_str.parse::<u32>() {
+                        per_page = limit_val;
+                    }
+                }
+            } else {
+                where_clause_for_select = format!(" WHERE {}", clause);
+                where_clause_for_count = where_clause_for_select.clone();
+            }
+        }
+    }
 
     // Calculate offset
     let offset = (page - 1) * per_page;
 
     // Get total count
-    let count: u32 = conn.query_first(
-        format!("SELECT COUNT(*) as count FROM {}", table_name)
-    ).map_err(|e| format!("Failed to get total count: {}", e))?
-    .unwrap_or(0);
+    let count: u32 = conn
+        .query_first(format!(
+            "SELECT COUNT(*) as count FROM {}{}",
+            table_name, where_clause_for_count
+        ))
+        .map_err(|e| format!("Failed to get total count: {}", e))?
+        .unwrap_or(0);
 
     // Get paginated data
-    let rows: Vec<mysql::Row> = conn.query(
-        format!("SELECT * FROM {} LIMIT {} OFFSET {}", table_name, per_page, offset)
-    ).map_err(|e| format!("Failed to query table data: {}", e))?;
+    let query = if has_limit_in_where {
+        // If limit is in where clause, we assume it also contains the offset
+        format!("SELECT * FROM {}{}", table_name, where_clause_for_select)
+    } else {
+        format!(
+            "SELECT * FROM {}{} LIMIT {} OFFSET {}",
+            table_name, where_clause_for_select, per_page, offset
+        )
+    };
+    let rows: Vec<mysql::Row> = conn
+        .query(query)
+        .map_err(|e| format!("Failed to query table data: {}", e))?;
 
     // Convert rows to Vec<HashMap<String, String>>
     let mut data = Vec::new();
     let mut columns = Vec::new();
 
     if let Some(first_row) = rows.first() {
-        columns = first_row.columns().iter()
+        columns = first_row
+            .columns()
+            .iter()
             .map(|col| col.name_str().to_string())
             .collect();
     }
@@ -170,11 +225,13 @@ pub fn get_table_data(project_id: String, table_name: String, page: u32, per_pag
 #[command(rename_all = "camelCase")]
 pub fn execute_query(project_id: String, query: String) -> Result<TableData, String> {
     let pool = connect_database(&project_id)?;
-    let mut conn = pool.get_conn()
+    let mut conn = pool
+        .get_conn()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     // Execute the custom query
-    let rows: Vec<mysql::Row> = conn.query(&query)
+    let rows: Vec<mysql::Row> = conn
+        .query(&query)
         .map_err(|e| format!("Failed to execute query: {}", e))?;
 
     // Convert rows to Vec<HashMap<String, String>>
@@ -182,7 +239,9 @@ pub fn execute_query(project_id: String, query: String) -> Result<TableData, Str
     let mut columns = Vec::new();
 
     if let Some(first_row) = rows.first() {
-        columns = first_row.columns().iter()
+        columns = first_row
+            .columns()
+            .iter()
             .map(|col| col.name_str().to_string())
             .collect();
     }
@@ -201,4 +260,90 @@ pub fn execute_query(project_id: String, query: String) -> Result<TableData, Str
         columns,
         rows: data,
     })
+}
+
+#[command(rename_all = "camelCase")]
+pub fn delete_row(
+    project_id: String,
+    table_name: String,
+    pk_column: String,
+    pk_value: String,
+) -> Result<u64, String> {
+    let pool = connect_database(&project_id)?;
+    let mut conn = pool
+        .get_conn()
+        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+
+    // Build a parameterized delete statement. Note: table and column names
+    // are identifiers and cannot be parameterized; we validate simple cases
+    // by allowing only alphanumeric and underscore characters to reduce risk.
+    let is_valid_ident = |s: &str| s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if !is_valid_ident(&table_name) || !is_valid_ident(&pk_column) {
+        return Err("Invalid table or column name".to_string());
+    }
+
+    let stmt = format!(
+        "DELETE FROM `{}` WHERE `{}` = :value",
+        table_name, pk_column
+    );
+
+    // Use named parameter to safely pass the value
+    conn.exec_drop(stmt, params! {"value" => pk_value.clone()})
+        .map_err(|e| format!("Failed to execute delete: {}", e))?;
+
+    // affected_rows returns u64
+    let affected = conn.affected_rows();
+
+    Ok(affected)
+}
+
+#[command(rename_all = "camelCase")]
+pub fn update_row(
+    project_id: String,
+    table_name: String,
+    pk_column: String,
+    pk_value: String,
+    data: HashMap<String, String>,
+) -> Result<u64, String> {
+    let pool = connect_database(&project_id)?;
+    let mut conn = pool
+        .get_conn()
+        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+
+    let is_valid_ident = |s: &str| s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if !is_valid_ident(&table_name) || !is_valid_ident(&pk_column) {
+        return Err("Invalid table or column name".to_string());
+    }
+
+    let mut update_data = data.clone();
+    update_data.remove(&pk_column);
+
+    if update_data.is_empty() {
+        return Ok(0);
+    }
+
+    let mut sets = Vec::new();
+    let mut params: Vec<String> = Vec::new();
+
+    for (key, value) in &update_data {
+        if !is_valid_ident(key) {
+            return Err(format!("Invalid column name: {}", key));
+        }
+        sets.push(format!("`{}` = ?", key));
+        params.push(value.clone());
+    }
+
+    params.push(pk_value);
+
+    let query = format!(
+        "UPDATE `{}` SET {} WHERE `{}` = ?",
+        table_name,
+        sets.join(", "),
+        pk_column
+    );
+
+    conn.exec_drop(query, params)
+        .map_err(|e| format!("Failed to execute update: {}", e))?;
+
+    Ok(conn.affected_rows())
 }

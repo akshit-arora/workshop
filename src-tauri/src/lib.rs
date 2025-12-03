@@ -1,6 +1,6 @@
-mod models;
-mod database;
 mod commands;
+mod database;
+mod models;
 mod state;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -22,7 +22,8 @@ pub fn run() {
     std::thread::spawn(move || {
         for project_id in rx {
             // Directly pass Arc<AppState> reference
-            let _ = crate::commands::project_commands::setup_project(project_id, thread_state.clone());
+            let _ =
+                crate::commands::project_commands::setup_project(project_id, thread_state.clone());
         }
     });
 
@@ -37,6 +38,8 @@ pub fn run() {
             commands::db_tool_commands::get_project_tables,
             commands::db_tool_commands::get_table_data,
             commands::db_tool_commands::execute_query,
+            commands::db_tool_commands::delete_row,
+            commands::db_tool_commands::update_row,
             commands::project_commands::get_project_config,
             commands::project_commands::update_project,
             commands::project_commands::delete_project,

@@ -2,6 +2,7 @@
 @plugin "daisyui" {
   themes: all;
 }
+@plugin "@tailwindcss/typography";
 
 @theme {
   --font-*: initial;

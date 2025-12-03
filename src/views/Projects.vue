@@ -4,64 +4,74 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { PencilSquareIcon } from '@heroicons/vue/24/outline';
 import { invoke } from '@tauri-apps/api/core';
 
-const projects = inject('projects');
-const showNewProjectModal = ref(false);
-const showEditProjectModal = ref(false);
-const projectName = ref('');
-const projectDescription = ref('');
-const projectLocation = ref('');
-const projectStatus = ref('In Progress');
-const currentEditProject = ref(null);
-const fetchProjects = inject('fetchProjects');
-const projectIdToDelete = ref(null);
+// Types
+interface Project {
+    id: string | number;
+    name: string;
+    description: string;
+    location: string;
+    status: string;
+}
 
-const statusOptions = [
-    {
-        'label': 'In Progress',
-        'value': 'InProgress',
-    },
-    {
-        'label': 'Completed',
-        'value': 'Completed',
-    },
-    {
-        'label': 'Initial Stage',
-        'value': 'InitialStage',
-    },
-    {
-        'label': 'On Hold',
-        'value': 'OnHold',
-    },
-    {
-        'label': 'Abandoned',
-        'value': 'Abandoned',
-    }
+interface StatusOption {
+    label: string;
+    value: string;
+}
+
+// Injected state
+const projects = inject<Project[]>('projects', []);
+const fetchProjects = inject<() => Promise<void>>('fetchProjects', async () => {
+    console.warn('fetchProjects function was not provided');
+});
+
+// Component state
+const showNewProjectModal = ref<boolean>(false);
+const showEditProjectModal = ref<boolean>(false);
+const projectIdToDelete = ref<string | number | null>(null);
+const currentEditProject = ref<Project | null>(null);
+const showDeleteConfirmModal = ref<boolean>(false);
+
+// Form state
+const projectName = ref<string>('');
+const projectDescription = ref<string>('');
+const projectLocation = ref<string>('');
+const projectStatus = ref<string>('InProgress');
+
+// Constants
+const statusOptions: StatusOption[] = [
+    { label: 'In Progress', value: 'InProgress' },
+    { label: 'Completed', value: 'Completed' },
+    { label: 'Initial Stage', value: 'InitialStage' },
+    { label: 'On Hold', value: 'OnHold' },
+    { label: 'Abandoned', value: 'Abandoned' }
 ];
 
-const createNewProject = () => {
-    resetForm();
-    showNewProjectModal.value = true;
-};
-
-const selectProjectFolder = async (isEdit = false) => {
+// Project folder selection
+const selectProjectFolder = async (e: MouseEvent) => {
+    e.preventDefault();
     try {
         const selected = await open({
             directory: true,
             multiple: false,
             title: 'Select Project Location'
         });
-        if (selected) {
-            projectLocation.value = selected as string;
+        if (selected && typeof selected === 'string') {
+            projectLocation.value = selected;
         }
     } catch (error) {
         console.error('Error selecting folder:', error);
     }
 };
 
+// Project CRUD operations
 const handleSubmit = async (event: Event) => {
     event.preventDefault();
+    if (!fetchProjects || !projectName.value || !projectLocation.value) {
+        return;
+    }
+
     try {
-        const newProject = await invoke('create_project', {
+        await invoke('create_project', {
             name: projectName.value,
             description: projectDescription.value,
             location: projectLocation.value,
@@ -71,23 +81,32 @@ const handleSubmit = async (event: Event) => {
         resetForm();
         showNewProjectModal.value = false;
     } catch (error) {
-        console.error('Failed to create project', error);
+        console.error('Failed to create project:', error);
     }
 };
 
-const deleteProject = async (projectId: string) => {
+const confirmDelete = (projectId: string | number) => {
+    projectIdToDelete.value = projectId;
+    showDeleteConfirmModal.value = true;
+};
+
+const deleteProject = async (projectId: string | number | null) => {
+    if (!fetchProjects || !projectId) return;
+
     try {
-        await invoke('delete_project', { id: projectId });
+        await invoke('delete_project', { id: projectId.toString() });
         await fetchProjects();
+        projectIdToDelete.value = null;
+        showDeleteConfirmModal.value = false;
     } catch (error) {
-        console.error('Failed to delete project', error);
+        console.error('Failed to delete project:', error);
     }
 };
 
-const startEditProject = (project: any) => {
+const startEditProject = (project: Project) => {
     currentEditProject.value = { ...project };
     projectName.value = project.name;
-    projectDescription.value = project.description;
+    projectDescription.value = project.description || '';
     projectLocation.value = project.location;
     projectStatus.value = project.status;
     showEditProjectModal.value = true;
@@ -129,73 +148,78 @@ const resetForm = () => {
     currentEditProject.value = null;
 };
 
+const getStatusLabel = (status: string): string => {
+    return statusOptions.find((option) => option.value === status)?.label || status;
+}
+
 fetchProjects();
 </script>
 
 <template>
     <div class="p-6">
+        <!-- Header section -->
         <div class="flex justify-between items-center mb-6">
             <h1 class="text-2xl font-bold">Projects</h1>
             <button
-                @click="createNewProject"
+                type="button"
                 class="btn btn-primary"
+                @click="showNewProjectModal = true"
             >
                 Create New Project
             </button>
         </div>
 
-        <!-- Project Grid -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Project grid -->
+        <div
+            class="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+            role="grid"
+            aria-label="Projects list"
+        >
             <div
                 v-for="project in projects"
                 :key="project.id"
-                class="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow duration-300"
+                class="card bg-base-100 shadow-xl"
+                role="gridcell"
             >
                 <div class="card-body">
-                    <div class="flex justify-between items-center">
-                        <h2 class="card-title">{{ project.name }}</h2>
-                        <div class="badge"
-                            :class="{
-                                'badge-primary': project.status === 'InProgress',
-                                'badge-success': project.status === 'Completed',
-                                'badge-warning': project.status === 'InitialStage',
-                                'badge-neutral': project.status === 'OnHold',
-                                'badge-error': project.status === 'Abandoned'
-                            }"
-                        >
-                            {{
-                                statusOptions.find(status => status.value === project.status)?.label || project.status
-                            }}
-                        </div>
+                    <h2 class="card-title">{{ project.name }}</h2>
+                    <p class="text-base-content/70">{{ project.description }}</p>
+                    <div
+                        class="badge badge-outline cursor-pointer"
+                        :class="{
+                            'badge-success': project.status === 'Completed',
+                            'badge-warning': project.status === 'OnHold',
+                            'badge-error': project.status === 'Abandoned'
+                        }"
+                    >
+                        {{ getStatusLabel(project.status) }}
                     </div>
-                    <p>{{ project.description }}</p>
-                    <div class="flex justify-between items-center mt-4">
+                    <div class="card-actions justify-between items-center mt-4">
                         <button
+                            type="button"
+                            class="btn btn-sm btn-ghost"
                             @click="openProjectFolder(project.location)"
-                            class="btn btn-ghost btn-sm"
-                            title="Open Project Folder"
+                            title="Open project folder"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6A2.25 2.25 0 0 1 6 3.75h3.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12a1.5 1.5 0 0 0 1.06.44H18A2.25 2.25 0 0 1 20.25 9v.776" />
-                            </svg>
+                            Open Folder
                         </button>
-                        <div class="flex space-x-2">
+                        <div class="flex gap-2">
                             <button
-                                @click="startEditProject(project)"
+                                type="button"
                                 class="btn btn-ghost btn-sm"
-                                title="Edit Project"
+                                @click="startEditProject(project)"
+                                title="Edit project"
                             >
                                 <PencilSquareIcon class="h-5 w-5" />
+                                <span class="sr-only">Edit {{ project.name }}</span>
                             </button>
                             <button
-                                @click="projectIdToDelete = project.id"
-                                onclick="my_modal_1.showModal()"
-                                class="btn btn-ghost btn-sm text-error"
-                                title="Delete Project"
+                                type="button"
+                                class="btn btn-error btn-sm"
+                                @click="confirmDelete(project.id)"
+                                title="Delete project"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L6.16 5.79m14.788 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                                </svg>
+                                Delete
                             </button>
                         </div>
                     </div>
@@ -203,169 +227,212 @@ fetchProjects();
             </div>
         </div>
 
-        <!-- New Project Modal -->
+        <!-- Create New Project Modal -->
         <dialog :open="showNewProjectModal" class="modal">
             <div class="modal-box">
-                <form @submit="handleSubmit" class="space-y-4">
-                    <h3 class="font-bold text-lg">Create New Project</h3>
-
+                <h3 class="font-bold text-lg mb-4">Create New Project</h3>
+                <form @submit="handleSubmit">
                     <div class="form-control w-full">
-                        <label class="label">
+                        <label class="label" for="projectName">
                             <span class="label-text">Project Name</span>
                         </label>
                         <input
-                            v-model="projectName"
+                            id="projectName"
                             type="text"
-                            required
+                            v-model="projectName"
                             class="input input-bordered w-full"
+                            required
                         />
                     </div>
 
-                    <div class="form-control w-full">
-                        <label class="label">
+                    <div class="form-control w-full mt-4">
+                        <label class="label" for="projectDescription">
                             <span class="label-text">Description</span>
                         </label>
                         <textarea
+                            id="projectDescription"
                             v-model="projectDescription"
-                            class="textarea textarea-bordered h-24 w-full"
+                            class="textarea textarea-bordered h-24"
                         ></textarea>
                     </div>
 
-                    <div class="form-control w-full">
-                        <label class="label">
+                    <div class="form-control w-full mt-4">
+                        <label class="label" for="projectLocation">
                             <span class="label-text">Project Location</span>
                         </label>
-                        <div class="">
+                        <div class="flex gap-2">
                             <input
-                                v-model="projectLocation"
+                                id="projectLocation"
                                 type="text"
+                                v-model="projectLocation"
+                                class="input input-bordered flex-1"
                                 readonly
-                                class="input input-bordered join-item w-full"
+                                required
                             />
                             <button
                                 type="button"
+                                class="btn"
                                 @click="selectProjectFolder"
-                                class="btn join-item mt-2"
                             >
                                 Browse
                             </button>
                         </div>
                     </div>
 
-                    <div class="form-control w-full">
-                        <label class="label">
+                    <div class="form-control w-full mt-4">
+                        <label class="label" for="projectStatus">
                             <span class="label-text">Status</span>
                         </label>
                         <select
+                            id="projectStatus"
                             v-model="projectStatus"
                             class="select select-bordered w-full"
                         >
-                            <option v-for="status in statusOptions" :key="status.value" :value="status.value">
-                                {{ status.label }}
+                            <option
+                                v-for="option in statusOptions"
+                                :key="option.value"
+                                :value="option.value"
+                            >
+                                {{ option.label }}
                             </option>
                         </select>
                     </div>
 
                     <div class="modal-action">
-                        <button type="button" class="btn" @click="showNewProjectModal = false">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Create Project</button>
+                        <button type="submit" class="btn btn-primary">Create</button>
+                        <button
+                            type="button"
+                            class="btn"
+                            @click="showNewProjectModal = false"
+                        >
+                            Cancel
+                        </button>
                     </div>
                 </form>
             </div>
             <form method="dialog" class="modal-backdrop">
-                <button @click="showNewProjectModal = false">close</button>
+                <button @click="showNewProjectModal = false">Close</button>
             </form>
         </dialog>
 
         <!-- Edit Project Modal -->
         <dialog :open="showEditProjectModal" class="modal">
             <div class="modal-box">
-                <form @submit="handleEditSubmit" class="space-y-4">
-                    <h3 class="font-bold text-lg">Edit Project</h3>
-
+                <h3 class="font-bold text-lg mb-4">Edit Project</h3>
+                <form @submit="handleEditSubmit">
                     <div class="form-control w-full">
-                        <label class="label">
+                        <label class="label" for="editProjectName">
                             <span class="label-text">Project Name</span>
                         </label>
                         <input
-                            v-model="projectName"
+                            id="editProjectName"
                             type="text"
-                            required
+                            v-model="projectName"
                             class="input input-bordered w-full"
+                            required
                         />
                     </div>
 
-                    <div class="form-control w-full">
-                        <label class="label">
+                    <div class="form-control w-full mt-4">
+                        <label class="label" for="editProjectDescription">
                             <span class="label-text">Description</span>
                         </label>
                         <textarea
+                            id="editProjectDescription"
                             v-model="projectDescription"
                             class="textarea textarea-bordered h-24"
                         ></textarea>
                     </div>
 
-                    <div class="form-control w-full">
-                        <label class="label">
+                    <div class="form-control w-full mt-4">
+                        <label class="label" for="editProjectLocation">
                             <span class="label-text">Project Location</span>
                         </label>
-                        <div class="join">
-                            <input
-                                v-model="projectLocation"
-                                type="text"
-                                readonly
-                                class="input input-bordered join-item w-full"
-                            />
-                            <button
-                                type="button"
-                                @click="selectProjectFolder"
-                                class="btn join-item"
-                            >
-                                Browse
-                            </button>
-                        </div>
+                        <input
+                            id="editProjectLocation"
+                            type="text"
+                            v-model="projectLocation"
+                            class="input input-bordered w-full"
+                            readonly
+                            required
+                        />
                     </div>
 
-                    <div class="form-control w-full">
-                        <label class="label">
+                    <div class="form-control w-full mt-4">
+                        <label class="label" for="editProjectStatus">
                             <span class="label-text">Status</span>
                         </label>
                         <select
+                            id="editProjectStatus"
                             v-model="projectStatus"
                             class="select select-bordered w-full"
                         >
-                            <option v-for="status in statusOptions" :key="status.value" :value="status.value">
-                                {{ status.label }}
+                            <option
+                                v-for="option in statusOptions"
+                                :key="option.value"
+                                :value="option.value"
+                            >
+                                {{ option.label }}
                             </option>
                         </select>
                     </div>
 
                     <div class="modal-action">
-                        <button type="button" class="btn" @click="showEditProjectModal = false">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Update Project</button>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                        <button
+                            type="button"
+                            class="btn"
+                            @click="showEditProjectModal = false"
+                        >
+                            Cancel
+                        </button>
                     </div>
                 </form>
             </div>
             <form method="dialog" class="modal-backdrop">
-                <button @click="showEditProjectModal = false">close</button>
+                <button @click="showEditProjectModal = false">Close</button>
             </form>
         </dialog>
-        <dialog id="my_modal_1" class="modal">
-            <div class="modal-box bg-warning text-warning-content">
-                <h3 class="text-lg font-bold">Deleting Project</h3>
-                <p class="py-4">Are you sure you want to delete this project?</p>
+
+        <!-- Delete Confirmation Modal -->
+        <dialog :open="showDeleteConfirmModal" class="modal">
+            <div class="modal-box">
+                <h3 class="font-bold text-lg">Delete Project</h3>
+                <p class="py-4">Are you sure you want to delete this project? This action cannot be undone.</p>
                 <div class="modal-action">
-                    <form method="dialog">
-                        <!-- if there is a button in form, it will close the modal -->
-                        <button class="btn" @click="deleteProject(projectIdToDelete)">Delete</button>
-                    </form>
+                    <button
+                        type="button"
+                        class="btn btn-error"
+                        @click="deleteProject(projectIdToDelete)"
+                    >
+                        Delete
+                    </button>
+                    <button
+                        type="button"
+                        class="btn"
+                        @click="showDeleteConfirmModal = false"
+                    >
+                        Cancel
+                    </button>
                 </div>
             </div>
+            <form method="dialog" class="modal-backdrop">
+                <button @click="showDeleteConfirmModal = false">Close</button>
+            </form>
         </dialog>
-
     </div>
 </template>
 
 <style scoped>
-/* Add any additional styles here */
+.modal {
+    background-color: rgba(0, 0, 0, 0.4);
+}
+
+.modal-backdrop {
+    background: none;
+}
+
+.modal-box {
+    max-height: 90vh;
+}
 </style>
