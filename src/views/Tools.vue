@@ -12,6 +12,10 @@
                 <h2 class="text-lg font-semibold mb-2">Markdown Previewer</h2>
                 <p>Write and preview Markdown in real-time with a split-pane view.</p>
             </router-link>
+            <router-link to="/tools/sql-beautifier" class="card bg-base-100 shadow-xl p-6">
+                <h2 class="text-lg font-semibold mb-2">SQL Beautifier</h2>
+                <p>Format and beautify your SQL queries.</p>
+            </router-link>
         </div>
     </div>
 </template>

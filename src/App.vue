@@ -21,10 +21,27 @@ useThemeStore();
 const isCollapsed = ref<boolean>(false);
 const projects = ref<Project[]>([]);
 const selectedProject = ref<Project | null>(null);
+const isLaravelProject = ref<boolean>(false);
 
 // Methods
 const toggleSidebar = () => {
     isCollapsed.value = !isCollapsed.value;
+};
+
+const checkProjectType = async () => {
+    if (!selectedProject.value) {
+        isLaravelProject.value = false;
+        return;
+    }
+    try {
+        // We need to pass the ID as a string. selectedProject.value.id might be number or string.
+        const id = String(selectedProject.value.id);
+        const type = await invoke<string>('get_project_config', { id, key: 'project_type' });
+        isLaravelProject.value = type === 'Laravel';
+    } catch (error) {
+        console.error('Failed to check project type:', error);
+        isLaravelProject.value = false;
+    }
 };
 
 const fetchProjects = async () => {
@@ -37,22 +54,31 @@ const fetchProjects = async () => {
     }
 };
 
+// Watch for changes in selectedProject
+import { watch } from 'vue';
+watch(selectedProject, () => {
+    checkProjectType();
+});
+
 // Provide values to child components
 provide('toggleSidebar', toggleSidebar);
 provide('isCollapsed', isCollapsed);
 provide('projects', projects);
 provide('fetchProjects', fetchProjects);
 provide('selectedProject', selectedProject);
+provide('isLaravelProject', isLaravelProject);
 
 // Initialize data
-onMounted(() => {
-    fetchProjects();
+onMounted(async () => {
+    await fetchProjects();
     
     // Initialize selectedProject from localStorage
     const storedProject = localStorage.getItem('selectedProject');
     if (storedProject) {
         try {
             selectedProject.value = JSON.parse(storedProject);
+            // Check project type after restoring selection
+            checkProjectType();
         } catch (e) {
             console.error('Failed to parse selectedProject from localStorage', e);
             localStorage.removeItem('selectedProject');

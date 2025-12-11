@@ -6,7 +6,8 @@ import {
     PlayIcon,
     BookmarkIcon,
     TrashIcon,
-    InformationCircleIcon
+    InformationCircleIcon,
+    Cog6ToothIcon
 } from '@heroicons/vue/24/outline';
 
 //-----------------------------------------------------------------------------
@@ -95,6 +96,7 @@ const errorState = reactive({
  * Handles SQL query input, saving, and search functionality
  */
 const queryInput = ref<string>('');           // Current SQL query
+const isRawSqlMode = ref<boolean>(false);     // Toggle for raw SQL mode
 const searchQuery = ref<string>('');          // Table search filter
 const showSaveQueryModal = ref<boolean>(false);
 const newQueryName = ref<string>('');
@@ -130,9 +132,10 @@ const filteredTables = computed(() => {
  * Dynamic placeholder for the SQL query input
  * Shows table-specific hint when a table is selected
  */
-const queryPlaceholder = computed(() =>
-    selectedTable.value ? `SELECT * FROM ${selectedTable.value} WHERE...` : ''
-);
+const queryPlaceholder = computed(() => {
+    if (isRawSqlMode.value) return 'Enter custom SQL query...';
+    return selectedTable.value ? `SELECT * FROM ${selectedTable.value} WHERE...` : 'Select a table to begin...';
+});
 
 /**
  * List of columns for the current table
@@ -162,9 +165,47 @@ const fetchTables = async (): Promise<void> => {
     } catch (error) {
         console.error('Failed to fetch tables:', error);
         tables.value = [];
-        errorState.tables = error instanceof Error ? error.message : 'Failed to fetch tables';
+        tables.value = [];
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        errorState.tables = errorMessage;
+        
+        if (errorMessage.includes('Database configuration not found')) {
+            // modalState.dbCredentials.isOpen = true; // User requested to not auto-open
+        }
     } finally {
         loadingState.tables = false;
+    }
+};
+
+/**
+ * Saves the database credentials to the project configuration
+ */
+const saveDbCredentials = async () => {
+    if (!selectedProject?.value) return;
+    
+    modalState.dbCredentials.loading = true;
+    modalState.dbCredentials.error = null;
+
+    try {
+        await invoke('save_db_credentials', {
+            projectId: selectedProject.value.id,
+            credentials: {
+                host: modalState.dbCredentials.host,
+                port: modalState.dbCredentials.port,
+                database: modalState.dbCredentials.database,
+                username: modalState.dbCredentials.username,
+                password: modalState.dbCredentials.password
+            }
+        });
+        
+        modalState.dbCredentials.isOpen = false;
+        // Retry fetching tables
+        await fetchTables();
+    } catch (e) {
+        console.error('Failed to save DB credentials:', e);
+        modalState.dbCredentials.error = e instanceof Error ? e.message : String(e);
+    } finally {
+        modalState.dbCredentials.loading = false;
     }
 };
 
@@ -182,7 +223,7 @@ const saveCurrentQuery = () => {
             id: Date.now(),
             name: newQueryName.value,
             query: queryInput.value,
-            table: selectedTable.value || ''
+            table: isRawSqlMode.value ? '' : (selectedTable.value || '')
         });
         newQueryName.value = '';
         showSaveQueryModal.value = false;
@@ -193,10 +234,17 @@ const saveCurrentQuery = () => {
  * Loads a saved query into the query input
  */
 const loadSavedQuery = (query: SavedQuery) => {
-    selectTable(query.table || '');
+    if (query.table) {
+        isRawSqlMode.value = false;
+        selectTable(query.table);
+    } else {
+        isRawSqlMode.value = true;
+        selectedTable.value = null;
+        tableData.value = { columns: [], rows: [], total: 0 };
+    }
     queryInput.value = query.query;
     showSaveQueryModal.value = false;
-    fetchTableData();
+    handleExecute();
 };
 
 /**
@@ -304,6 +352,45 @@ const fetchTableData = async (): Promise<void> => {
     }
 };
 
+/**
+ * Executes a raw SQL query
+ */
+const executeCustomQuery = async (): Promise<void> => {
+    loadingState.query = true;
+    errorState.query = null;
+
+    try {
+        if (!selectedProject?.value) {
+            throw new Error('No project selected');
+        }
+
+        const result = await invoke<TableState>('execute_query', {
+            projectId: selectedProject.value.id,
+            query: queryInput.value
+        });
+
+        tableData.value = result;
+        currentPage.value = 1;
+    } catch (error) {
+        console.error('Failed to execute query:', error);
+        tableData.value = { columns: [], rows: [], total: 0 };
+        errorState.query = error instanceof Error ? error.message : 'Failed to execute query';
+    } finally {
+        loadingState.query = false;
+    }
+};
+
+/**
+ * Handles query execution based on current mode
+ */
+const handleExecute = async (): Promise<void> => {
+    if (isRawSqlMode.value) {
+        await executeCustomQuery();
+    } else {
+        await fetchTableData();
+    }
+};
+
 // Modal states
 const modalState = reactive({
     saveQuery: {
@@ -314,6 +401,16 @@ const modalState = reactive({
         isOpen: false,
         isEditing: false,
         selectedRow: null as TableRow | null
+    },
+    dbCredentials: {
+        isOpen: false,
+        host: '127.0.0.1',
+        port: '3306',
+        database: '',
+        username: 'root',
+        password: '',
+        error: null as string | null,
+        loading: false
     }
 });
 
@@ -371,45 +468,12 @@ const fetchMetadata = async () => {
 
 // Table operations
 const selectTable = (table: string): void => {
+    isRawSqlMode.value = false;
     selectedTable.value = table;
     currentPage.value = 1; // Reset to first page
     // Reset the query input when a new table is selected
     queryInput.value = '';
     fetchTableData();
-};
-
-const executeQuery = async (): Promise<void> => {
-    loadingState.query = true;
-    errorState.query = null;
-
-    try {
-        let query = queryInput.value.trim();
-        if (!query) {
-            await fetchTableData();
-            return;
-        }
-
-        if (!query.toLowerCase().includes('limit')) {
-            query = `${query} LIMIT ${perPage.value}`;
-        }
-        
-        if (!selectedProject?.value) {
-            throw new Error('No project selected');
-        }
-        const project = selectedProject.value;
-        const result = await invoke<TableState>('execute_query', {
-            projectId: project.id,
-            query: `SELECT * FROM ${selectedTable.value} WHERE ${query}`
-        });
-
-        tableData.value = result;
-    } catch (error) {
-        console.error('Failed to execute query:', error);
-        tableData.value = { columns: [], rows: [], total: 0 };
-        errorState.query = error instanceof Error ? error.message : 'Failed to execute query';
-    } finally {
-        loadingState.query = false;
-    }
 };
 
 // Row operations
@@ -528,7 +592,16 @@ onUnmounted(() => {
         <!-- Tables sidebar -->
         <div class="w-64 rounded-box bg-base-200 border-r border-base-300 flex flex-col h-full m-4">
             <div class="p-4 flex-shrink-0">
-                <h2 class="text-lg font-semibold mb-4">Tables</h2>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold">Tables</h2>
+                    <button 
+                        @click="modalState.dbCredentials.isOpen = true" 
+                        class="btn btn-ghost btn-sm btn-square" 
+                        title="Configure Database"
+                    >
+                        <Cog6ToothIcon class="w-5 h-5" />
+                    </button>
+                </div>
                 <div class="form-control mb-4">
                     <input
                     type="text"
@@ -541,8 +614,15 @@ onUnmounted(() => {
                 <div v-if="loadingState.tables" class="flex justify-center items-center p-4">
                     <span class="loading loading-spinner loading-md"></span>
                 </div>
-                <div v-else-if="errorState.tables" class="p-4 text-error text-sm">
-                    {{ errorState.tables }}
+                <div v-else-if="errorState.tables" class="p-4 text-error text-sm flex flex-col gap-2">
+                    <span>{{ errorState.tables }}</span>
+                    <button 
+                        v-if="errorState.tables.includes('Database configuration not found')"
+                        @click="modalState.dbCredentials.isOpen = true"
+                        class="btn btn-xs btn-outline btn-error"
+                    >
+                        Configure Database
+                    </button>
                 </div>
                 <ul v-else class="menu bg-base-200 rounded-box p-4">
                     <li v-for="table in filteredTables" :key="table">
@@ -562,10 +642,18 @@ onUnmounted(() => {
             <!-- Query input -->
             <div class="flex-shrink-0 py-6">
                 <div class="flex justify-between items-center mb-2">
+                <div class="flex items-center gap-4">
                     <label class="label">
                         <span class="label-text">SQL Query</span>
                     </label>
-                    <div class="dropdown dropdown-end">
+                    <div class="form-control">
+                        <label class="label cursor-pointer gap-2">
+                            <span class="label-text text-xs">Raw SQL</span>
+                            <input type="checkbox" class="toggle toggle-xs" v-model="isRawSqlMode" />
+                        </label>
+                    </div>
+                </div>
+                <div class="dropdown dropdown-end">
                         <label tabindex="0" class="btn btn-ghost btn-sm">
                             Saved Queries
                         </label>
@@ -588,30 +676,30 @@ onUnmounted(() => {
                     <input
                         v-model="queryInput"
                         class="input input-bordered join-item w-full font-mono"
-                        :placeholder="selectedTable ? queryPlaceholder : 'Select a table to begin...'"
-                        @keyup.enter="fetchTableData()"
+                        :placeholder="queryPlaceholder"
+                        @keyup.enter="handleExecute()"
                         autocomplete="off"
                         autocorrect="off"
                         autocapitalize="off"
                         spellcheck="false"
-                        :disabled="!selectedTable"
+                        :disabled="!isRawSqlMode && !selectedTable"
                     />
                     <div class="join-item flex items-center space-x-2">
-                        <div class="tooltip" :data-tip="!selectedTable ? 'Select a table first' : 'Execute Query'">
+                        <div class="tooltip" :data-tip="(!isRawSqlMode && !selectedTable) ? 'Select a table first' : 'Execute Query'">
                             <button
-                                @click="fetchTableData()"
+                                @click="handleExecute()"
                                 class="btn btn-primary"
                                 :class="{ 'loading': loadingState.query }"
-                                :disabled="loadingState.query || !selectedTable"
+                                :disabled="loadingState.query || (!isRawSqlMode && !selectedTable)"
                             >
                                 <PlayIcon class="h-5 w-5" v-if="!loadingState.query" />
                             </button>
                         </div>
-                        <div class="tooltip" :data-tip="!selectedTable ? 'Select a table first' : 'Save Query'">
+                        <div class="tooltip" :data-tip="(!isRawSqlMode && !selectedTable) ? 'Select a table first' : 'Save Query'">
                             <button
                                 @click="showSaveQueryModal = true"
                                 class="btn btn-ghost"
-                                :disabled="loadingState.query || !selectedTable"
+                                :disabled="loadingState.query || (!isRawSqlMode && !selectedTable)"
                             >
                                 <BookmarkIcon class="h-5 w-5" />
                             </button>
@@ -622,7 +710,7 @@ onUnmounted(() => {
 
             <!-- Results table -->
             <div class="bg-base-100 flex-1 flex flex-col min-h-0 p-6 rounded-box">
-                <div v-if="!selectedTable" class="flex-1 flex justify-center items-center">
+                <div v-if="!selectedTable && !isRawSqlMode" class="flex-1 flex justify-center items-center">
                     <div class="text-center text-base-content/70">
                         <h3 class="text-lg font-semibold mb-2">No Table Selected</h3>
                         <p>Please select a table from the sidebar to view its data.</p>
@@ -640,7 +728,7 @@ onUnmounted(() => {
                 <div v-else class="flex-1 flex flex-col min-h-0 relative">
                     <div class="flex justify-between items-center mb-4 px-1">
                         <h3 class="text-lg font-bold flex items-center gap-2">
-                            {{ selectedTable }}
+                            {{ isRawSqlMode ? 'Query Results' : selectedTable }}
                             <span class="badge badge-sm">{{ tableData.total }} rows</span>
                         </h3>
                         <button @click="fetchMetadata" class="btn btn-sm btn-outline gap-2">
@@ -656,7 +744,7 @@ onUnmounted(() => {
                                         <th v-for="column in tableColumns" :key="column" class="whitespace-nowrap">
                                             {{ column }}
                                         </th>
-                                        <th class="sticky right-0 bg-base-100 w-28 shadow-[-5px_0_5px_-5px_rgba(0,0,0,0.1)]">Actions</th>
+                                        <th v-if="!isRawSqlMode" class="sticky right-0 bg-base-100 w-28 shadow-[-5px_0_5px_-5px_rgba(0,0,0,0.1)]">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -669,7 +757,7 @@ onUnmounted(() => {
                                         <td v-for="column in tableColumns" :key="column" class="whitespace-nowrap">
                                             {{ row[column] }}
                                         </td>
-                                        <td class="sticky right-0 bg-base-100 w-28 shadow-[-5px_0_5px_-5px_rgba(0,0,0,0.1)]">
+                                        <td v-if="!isRawSqlMode" class="sticky right-0 bg-base-100 w-28 shadow-[-5px_0_5px_-5px_rgba(0,0,0,0.1)]">
                                             <div class="flex items-center justify-center space-x-2">
                                                 <div>
                                                     <button @click.stop="deleteRecord(row)" class="btn btn-error btn-xs" :disabled="loadingState.deleting">
@@ -687,7 +775,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Pagination -->
-                <div v-if="selectedTable && tableData.total > 0" class="flex justify-between items-center p-4">
+                <div v-if="!isRawSqlMode && selectedTable && tableData.total > 0" class="flex justify-between items-center p-4">
                     <div class="flex items-center gap-4">
                         <select
                             class="select select-bordered select-sm w-24"
@@ -777,23 +865,82 @@ onUnmounted(() => {
                     {{ modalState.rowDetails.isEditing ? 'Cancel' : 'Close' }}
                 </button>
                 <button
-                    v-if="!modalState.rowDetails.isEditing"
+                    v-if="modalState.rowDetails.isEditing"
+                    @click="editRecord(modalState.rowDetails.selectedRow!)"
+                    class="btn btn-primary"
+                >
+                    Save
+                </button>
+                <button
+                    v-else
                     @click="modalState.rowDetails.isEditing = true"
                     class="btn btn-primary"
                 >
                     Edit
                 </button>
-                <button
-                    v-if="modalState.rowDetails.isEditing && modalState.rowDetails.selectedRow"
-                    @click="editRecord(modalState.rowDetails.selectedRow)"
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button @click="modalState.rowDetails.isOpen = false">close</button>
+        </form>
+    </dialog>
+
+    <!-- DB Credentials Modal -->
+    <dialog :open="modalState.dbCredentials.isOpen" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg mb-4">Database Connection</h3>
+            <p class="text-sm text-base-content/70 mb-4">
+                No database configuration found. Please enter your MySQL connection details.
+                These will be saved to <code class="bg-base-200 px-1 rounded">.workshop/project.json</code>.
+            </p>
+            
+            <div class="flex flex-col gap-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Host</span></label>
+                        <input v-model="modalState.dbCredentials.host" type="text" placeholder="127.0.0.1" class="input input-bordered" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Port</span></label>
+                        <input v-model="modalState.dbCredentials.port" type="text" placeholder="3306" class="input input-bordered" />
+                    </div>
+                </div>
+                
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Database Name</span></label>
+                    <input v-model="modalState.dbCredentials.database" type="text" placeholder="my_database" class="input input-bordered" />
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Username</span></label>
+                        <input v-model="modalState.dbCredentials.username" type="text" placeholder="root" class="input input-bordered" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Password</span></label>
+                        <input v-model="modalState.dbCredentials.password" type="password" placeholder="password" class="input input-bordered" />
+                    </div>
+                </div>
+
+                <div v-if="modalState.dbCredentials.error" class="alert alert-error text-sm">
+                    {{ modalState.dbCredentials.error }}
+                </div>
+            </div>
+
+            <div class="modal-action">
+                <button @click="modalState.dbCredentials.isOpen = false" class="btn">Cancel</button>
+                <button 
+                    @click="saveDbCredentials" 
                     class="btn btn-primary"
+                    :class="{ 'loading': modalState.dbCredentials.loading }"
+                    :disabled="modalState.dbCredentials.loading"
                 >
-                    Save
+                    Connect & Save
                 </button>
             </div>
         </div>
-        <form method="dialog" class="modal-backdrop" @click="modalState.rowDetails.isOpen = false">
-            <button>close</button>
+        <form method="dialog" class="modal-backdrop">
+            <button @click="modalState.dbCredentials.isOpen = false">close</button>
         </form>
     </dialog>
 

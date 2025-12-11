@@ -4,9 +4,10 @@ import Dashboard from '../views/Dashboard.vue'
 import Database from '../views/Database.vue'
 import Settings from '../views/Settings.vue'
 import Tools from '../views/Tools.vue'
-import LogViewer from '../views/LogViewer.vue'
+import LogManager from '../views/tools/LogManager.vue'
 import JSONFormatter from '../views/tools/JSONFormatter.vue'
 import MarkdownPreviewer from '../views/tools/MarkdownPreviewer.vue'
+import SQLBeautifier from '../views/tools/SQLBeautifier.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -47,9 +48,14 @@ const router = createRouter({
       component: MarkdownPreviewer
     },
     {
-      path: '/logs',
-      name: 'logs',
-      component: LogViewer
+      path: '/tools/sql-beautifier',
+      name: 'sql-beautifier',
+      component: SQLBeautifier
+    },
+    {
+      path: '/tools/log-manager',
+      name: 'log-manager',
+      component: LogManager
     }
   ]
 })

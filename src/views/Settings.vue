@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, watch } from 'vue';
 import { useThemeStore } from '../stores/theme';
 
 const userName = ref(localStorage.getItem('userName') || '');

@@ -40,11 +40,14 @@ pub fn run() {
             commands::db_tool_commands::execute_query,
             commands::db_tool_commands::delete_row,
             commands::db_tool_commands::update_row,
+            commands::db_tool_commands::save_db_credentials,
             commands::project_commands::get_project_config,
             commands::project_commands::update_project,
             commands::project_commands::delete_project,
             commands::project_commands::open_folder,
-            commands::project_commands::open_in_editor
+            commands::project_commands::open_in_editor,
+            commands::log_commands::get_log_files,
+            commands::log_commands::read_log_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

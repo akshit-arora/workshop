@@ -1,10 +1,10 @@
+use crate::database::Database;
+use crate::models::project::{Project, ProjectStatus};
+use crate::state::AppState;
+use chrono::Utc;
+use std::sync::Arc;
 use tauri::command;
 use tauri::State;
-use std::sync::Arc;
-use crate::state::AppState;
-use crate::models::project::{Project, ProjectStatus};
-use crate::database::{Database};
-use chrono::Utc;
 
 const DB_PATH: &str = "projects.db";
 
@@ -14,7 +14,7 @@ pub fn create_project(
     description: String,
     location: String,
     status: ProjectStatus,
-    state: State<Arc<AppState>>
+    state: State<Arc<AppState>>,
 ) -> Result<Project, String> {
     let db = Database::new(DB_PATH).map_err(|e| e.to_string())?;
     let project = Project::new(name, description, location, status);
@@ -22,7 +22,11 @@ pub fn create_project(
     db.create_project(&project).map_err(|e| e.to_string())?;
 
     // Emit event to channel
-    let _ = state.project_event_tx.lock().unwrap().send(project.id.clone());
+    let _ = state
+        .project_event_tx
+        .lock()
+        .unwrap()
+        .send(project.id.clone());
 
     Ok(project)
 }
@@ -34,12 +38,19 @@ pub fn get_projects() -> Result<Vec<Project>, String> {
 }
 
 #[command]
-pub fn update_project(id: String, name: Option<String>, description: Option<String>, location: Option<String>, status: Option<ProjectStatus>) -> Result<Project, String> {
+pub fn update_project(
+    id: String,
+    name: Option<String>,
+    description: Option<String>,
+    location: Option<String>,
+    status: Option<ProjectStatus>,
+) -> Result<Project, String> {
     let db = Database::new(DB_PATH).map_err(|e| e.to_string())?;
 
     // First, get the existing project
     let mut existing_projects = db.get_projects().map_err(|e| e.to_string())?;
-    let existing_project = existing_projects.iter_mut()
+    let existing_project = existing_projects
+        .iter_mut()
         .find(|p| p.id == id)
         .ok_or("Project not found".to_string())?;
 
@@ -60,7 +71,8 @@ pub fn update_project(id: String, name: Option<String>, description: Option<Stri
     // Update timestamp
     existing_project.updated_at = Utc::now().to_rfc3339();
 
-    db.update_project(&id, existing_project).map_err(|e| e.to_string())?;
+    db.update_project(&id, existing_project)
+        .map_err(|e| e.to_string())?;
     Ok(existing_project.clone())
 }
 
@@ -97,25 +109,41 @@ pub fn open_folder(location: String) -> Result<(), String> {
 }
 
 #[command]
-pub fn open_in_editor(editor: String, location: String) -> Result<(), String> {
-    // Validate editor to prevent potential command injection
-    let safe_editors = vec![
-        "code",   // VSCode
-        "subl",   // Sublime Text
-        "phpstorm", // PHPStorm
-        "windsurf", // Windsurf
-        "zed"     // Zed
-    ];
-
-    if !safe_editors.contains(&editor.as_str()) {
-        return Err(format!("Unsupported editor: {}", editor));
-    }
+pub fn open_in_editor(editor: String, location: String, line: Option<u32>) -> Result<(), String> {
+    // Map display names to actual commands
+    let command = match editor.as_str() {
+        "VSCode" | "code" => "code",
+        "Sublime Text" | "subl" => "subl",
+        "PHPStorm" | "phpstorm" => "phpstorm",
+        "Windsurf" | "windsurf" => "windsurf",
+        "Zed" | "zed" => "zed",
+        _ => return Err(format!("Unsupported editor: {}", editor)),
+    };
 
     // Use std::process::Command to launch the editor
-    std::process::Command::new(editor)
-        .arg(location)
-        .spawn()
-        .map_err(|e| e.to_string())?;
+    let mut cmd = std::process::Command::new(command);
+
+    if let Some(l) = line {
+        match command {
+            "code" | "windsurf" | "zed" => {
+                cmd.arg("-g").arg(format!("{}:{}", location, l));
+            }
+            "subl" => {
+                cmd.arg(format!("{}:{}", location, l));
+            }
+            "phpstorm" => {
+                cmd.arg("--line").arg(l.to_string()).arg(&location);
+            }
+            _ => {
+                // Fallback for others or if unknown
+                cmd.arg(format!("{}:{}", location, l));
+            }
+        }
+    } else {
+        cmd.arg(location);
+    }
+
+    cmd.spawn().map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -126,7 +154,8 @@ pub fn get_project_type(id: String) -> Result<String, String> {
 
     // First, get the existing project
     let mut existing_projects = db.get_projects().map_err(|e| e.to_string())?;
-    let existing_project = existing_projects.iter_mut()
+    let existing_project = existing_projects
+        .iter_mut()
         .find(|p| p.id == id)
         .ok_or("Project not found".to_string())?;
 
@@ -157,7 +186,9 @@ pub fn get_project_type(id: String) -> Result<String, String> {
 pub fn setup_project(id: String, _state: std::sync::Arc<AppState>) -> Result<String, String> {
     let db = Database::new(DB_PATH).map_err(|e| e.to_string())?;
     // Get the project
-    let project = db.get_project_by_id(&id).map_err(|e| e.to_string())?
+    let project = db
+        .get_project_by_id(&id)
+        .map_err(|e| e.to_string())?
         .ok_or_else(|| "Project not found".to_string())?;
     let location = &project.location;
 
@@ -174,8 +205,11 @@ pub fn setup_project(id: String, _state: std::sync::Arc<AppState>) -> Result<Str
     let json_path = format!("{}/project.json", workshop_dir);
     if !std::path::Path::new(&json_path).exists() {
         let json_content = serde_json::json!({ "project_type": project_type });
-        std::fs::write(&json_path, serde_json::to_string_pretty(&json_content).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
+        std::fs::write(
+            &json_path,
+            serde_json::to_string_pretty(&json_content).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
     }
 
     Ok(project_type)
@@ -186,12 +220,22 @@ pub fn get_project_config(id: String, key: String) -> Result<Option<String>, Str
     let db = Database::new(DB_PATH).map_err(|e| e.to_string())?;
 
     // Get the project location
-    let project = db.get_project_by_id(&id).map_err(|e| e.to_string())?
+    let project = db
+        .get_project_by_id(&id)
+        .map_err(|e| e.to_string())?
         .ok_or_else(|| "Project not found".to_string())?;
 
     // Check if project.json exists
     let config_path = format!("{}/.workshop/project.json", project.location);
     if !std::path::Path::new(&config_path).exists() {
+        // Fallback for project_type if file doesn't exist
+        if key == "project_type" {
+            if let Ok(project_type) = get_project_type(id) {
+                if project_type != "Unknown" {
+                    return Ok(Some(project_type));
+                }
+            }
+        }
         return Ok(None);
     }
 
@@ -206,6 +250,17 @@ pub fn get_project_config(id: String, key: String) -> Result<Option<String>, Str
         }
     }
 
+    // Fallback for project_type if not found in config
+    if key == "project_type" {
+        if let Ok(project_type) = get_project_type(id.clone()) {
+            // Optionally save it back to project.json? For now just return it.
+            // To save it, we would need to update the json and write it back.
+            // Let's just return it to be safe and fast.
+            if project_type != "Unknown" {
+                return Ok(Some(project_type));
+            }
+        }
+    }
+
     Ok(None)
 }
-

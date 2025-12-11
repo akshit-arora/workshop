@@ -1,11 +1,12 @@
 use mysql::prelude::*;
 use mysql::*;
 use serde::Serialize;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
+use std::path::Path;
 use tauri::command;
 
-use crate::commands::project_commands::get_project_config;
 use crate::database::Database;
 
 fn convert_mysql_value(value: &mysql::Value) -> String {
@@ -23,7 +24,6 @@ fn convert_mysql_value(value: &mysql::Value) -> String {
             let sign = if *neg { "-" } else { "" };
             format!("{}{}.{:02}:{:02}:{:02}", sign, d, h, i, s)
         }
-        _ => "NULL".to_string(),
     }
 }
 
@@ -34,16 +34,16 @@ pub struct TableData {
     rows: Vec<HashMap<String, String>>,
 }
 
+#[derive(serde::Deserialize)]
+pub struct DbCredentials {
+    host: String,
+    port: String,
+    database: String,
+    username: String,
+    password: String,
+}
+
 fn connect_database(project_id: &str) -> Result<Pool, String> {
-    // First, get the project type
-    let project_type = get_project_config(project_id.to_string(), "project_type".to_string())
-        .map_err(|e| format!("Failed to get project type: {}", e))?
-        .ok_or_else(|| "Project type not found".to_string())?;
-
-    if project_type != "Laravel" {
-        return Err("Only Laravel projects are supported currently".to_string());
-    }
-
     // Get project location
     let db = Database::new("projects.db")
         .map_err(|e| format!("Failed to connect to projects database: {}", e))?;
@@ -59,44 +59,81 @@ fn connect_database(project_id: &str) -> Result<Pool, String> {
         Err(e) => return Err(format!("Database error while fetching project: {}", e)),
     };
 
-    // Check if .env file exists
-    let env_path = format!("{}/.env", project.location);
-    if !std::path::Path::new(&env_path).exists() {
-        return Err("No .env file found in project directory".to_string());
-    }
+    let mut host = String::new();
+    let mut port = String::new();
+    let mut database = String::new();
+    let mut username = String::new();
+    let mut password = String::new();
 
-    // Read and parse .env file
-    let env_content =
-        fs::read_to_string(&env_path).map_err(|e| format!("Failed to read .env file: {}", e))?;
+    // 1. Try .env file first (for Laravel or other dotenv projects)
+    let env_path = Path::new(&project.location).join(".env");
+    let mut env_found = false;
 
-    let mut env_vars = HashMap::new();
-    for line in env_content.lines() {
-        if line.trim().is_empty() || line.starts_with('#') {
-            continue;
+    if env_path.exists() {
+        if let Ok(env_content) = fs::read_to_string(&env_path) {
+            let mut env_vars = HashMap::new();
+            for line in env_content.lines() {
+                if line.trim().is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                if let Some((key, value)) = line.split_once('=') {
+                    env_vars.insert(key.trim().to_string(), value.trim().to_string());
+                }
+            }
+
+            let get_env =
+                |key: &str| -> Option<String> { env_vars.get(key).map(|s| s.to_string()) };
+
+            if let Some(conn) = get_env("DB_CONNECTION") {
+                if conn == "mysql" {
+                    if let (Some(h), Some(p), Some(d), Some(u), Some(pw)) = (
+                        get_env("DB_HOST"),
+                        get_env("DB_PORT"),
+                        get_env("DB_DATABASE"),
+                        get_env("DB_USERNAME"),
+                        get_env("DB_PASSWORD"),
+                    ) {
+                        host = h;
+                        port = p;
+                        database = d;
+                        username = u;
+                        password = pw;
+                        env_found = true;
+                    }
+                }
+            }
         }
-        if let Some((key, value)) = line.split_once('=') {
-            env_vars.insert(key.trim().to_string(), value.trim().to_string());
+    }
+
+    // 2. If not found in .env, try .workshop/project.json
+    if !env_found {
+        let project_json_path = Path::new(&project.location)
+            .join(".workshop")
+            .join("project.json");
+        if project_json_path.exists() {
+            if let Ok(content) = fs::read_to_string(&project_json_path) {
+                if let Ok(json) = serde_json::from_str::<Value>(&content) {
+                    if let Some(db_config) = json.get("database") {
+                        if db_config["connection"].as_str().unwrap_or("") == "mysql" {
+                            host = db_config["host"].as_str().unwrap_or("").to_string();
+                            port = db_config["port"].as_str().unwrap_or("").to_string();
+                            database = db_config["database"].as_str().unwrap_or("").to_string();
+                            username = db_config["username"].as_str().unwrap_or("").to_string();
+                            password = db_config["password"].as_str().unwrap_or("").to_string();
+
+                            if !host.is_empty() && !database.is_empty() && !username.is_empty() {
+                                env_found = true;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
-    // Extract database configuration
-    let get_env = |key: &str| -> Result<String, String> {
-        env_vars
-            .get(key)
-            .ok_or_else(|| format!("{} not found in .env", key))
-            .map(|s| s.to_string())
-    };
-
-    let connection = get_env("DB_CONNECTION")?;
-    if connection != "mysql" {
-        return Err("Only MySQL connections are supported currently".to_string());
+    if !env_found {
+        return Err("Database configuration not found. Please ensure either a .env file with DB credentials exists or configure the database settings.".to_string());
     }
-
-    let host = get_env("DB_HOST")?;
-    let port = get_env("DB_PORT")?;
-    let database = get_env("DB_DATABASE")?;
-    let username = get_env("DB_USERNAME")?;
-    let password = get_env("DB_PASSWORD")?;
 
     // Build connection using OptsBuilder
     let opts = mysql::OptsBuilder::new()
@@ -113,6 +150,54 @@ fn connect_database(project_id: &str) -> Result<Pool, String> {
     let pool = Pool::new(opts).map_err(|e| format!("Failed to connect to database: {}", e))?;
 
     Ok(pool)
+}
+
+#[command(rename_all = "camelCase")]
+pub fn save_db_credentials(project_id: String, credentials: DbCredentials) -> Result<(), String> {
+    // Get project location
+    let db = Database::new("projects.db")
+        .map_err(|e| format!("Failed to connect to projects database: {}", e))?;
+
+    let project = match db.get_project_by_id(&project_id) {
+        Ok(Some(project)) => project,
+        Ok(None) => return Err(format!("Project with ID '{}' not found", project_id)),
+        Err(e) => return Err(format!("Database error: {}", e)),
+    };
+
+    let workshop_dir = Path::new(&project.location).join(".workshop");
+    if !workshop_dir.exists() {
+        fs::create_dir(&workshop_dir)
+            .map_err(|e| format!("Failed to create .workshop directory: {}", e))?;
+    }
+
+    let project_json_path = workshop_dir.join("project.json");
+
+    let mut current_config = if project_json_path.exists() {
+        let content = fs::read_to_string(&project_json_path)
+            .map_err(|e| format!("Failed to read project.json: {}", e))?;
+        serde_json::from_str(&content).unwrap_or(json!({}))
+    } else {
+        json!({})
+    };
+
+    let db_config = json!({
+        "connection": "mysql",
+        "host": credentials.host,
+        "port": credentials.port,
+        "database": credentials.database,
+        "username": credentials.username,
+        "password": credentials.password,
+    });
+
+    current_config["database"] = db_config;
+
+    fs::write(
+        &project_json_path,
+        serde_json::to_string_pretty(&current_config).unwrap(),
+    )
+    .map_err(|e| format!("Failed to write project.json: {}", e))?;
+
+    Ok(())
 }
 
 #[command]
