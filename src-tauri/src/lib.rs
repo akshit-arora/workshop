@@ -1,7 +1,9 @@
 mod commands;
 mod database;
+mod db_factory;
 mod models;
 mod state;
+mod utils;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -15,6 +17,7 @@ pub fn run() {
     let (tx, rx) = mpsc::channel::<String>();
     let app_state = Arc::new(state::AppState {
         project_event_tx: Mutex::new(tx),
+        terminal_sessions: Mutex::new(std::collections::HashMap::new()),
     });
 
     // Spawn background thread to listen for project_created events
@@ -41,13 +44,18 @@ pub fn run() {
             commands::db_tool_commands::delete_row,
             commands::db_tool_commands::update_row,
             commands::db_tool_commands::save_db_credentials,
+            commands::db_tool_commands::get_db_connection_type,
             commands::project_commands::get_project_config,
             commands::project_commands::update_project,
             commands::project_commands::delete_project,
             commands::project_commands::open_folder,
             commands::project_commands::open_in_editor,
+            commands::project_commands::get_laravel_commands,
             commands::log_commands::get_log_files,
-            commands::log_commands::read_log_file
+            commands::log_commands::read_log_file,
+            commands::terminal_commands::spawn_pty,
+            commands::terminal_commands::write_pty,
+            commands::terminal_commands::resize_pty
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

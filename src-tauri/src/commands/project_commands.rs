@@ -1,12 +1,62 @@
 use crate::database::Database;
 use crate::models::project::{Project, ProjectStatus};
 use crate::state::AppState;
+use crate::utils::get_db_path;
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::command;
 use tauri::State;
 
-const DB_PATH: &str = "projects.db";
+/// Helper function to configure a Command with proper environment variables
+/// This ensures that PHP, composer, and other system commands are accessible
+fn configure_command_env(cmd: &mut std::process::Command) {
+    // Get the user's actual PATH by running a login shell
+    // This is necessary because when the app is launched from Finder,
+    // it doesn't have the user's PATH from .zshrc, .bash_profile, etc.
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+
+    // Try to get the PATH from a login shell
+    if let Ok(output) = std::process::Command::new(&shell)
+        .arg("-l")
+        .arg("-c")
+        .arg("echo $PATH")
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(path) = String::from_utf8(output.stdout) {
+                let path = path.trim();
+                if !path.is_empty() {
+                    cmd.env("PATH", path);
+                }
+            }
+        }
+    }
+
+    // Fallback: try to inherit PATH from current process
+    if let Ok(path) = std::env::var("PATH") {
+        // Only set if we didn't already set it from the shell
+        if cmd.get_envs().all(|(k, _)| k != "PATH") {
+            cmd.env("PATH", path);
+        }
+    }
+
+    // Also inherit HOME for proper shell initialization
+    if let Ok(home) = std::env::var("HOME") {
+        cmd.env("HOME", home);
+    }
+
+    // Inherit USER
+    if let Ok(user) = std::env::var("USER") {
+        cmd.env("USER", user);
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LaravelCommand {
+    pub name: String,
+    pub description: Option<String>,
+}
 
 #[command]
 pub fn create_project(
@@ -16,7 +66,8 @@ pub fn create_project(
     status: ProjectStatus,
     state: State<Arc<AppState>>,
 ) -> Result<Project, String> {
-    let db = Database::new(DB_PATH).map_err(|e| e.to_string())?;
+    let db_path = get_db_path()?;
+    let db = Database::new(db_path).map_err(|e| e.to_string())?;
     let project = Project::new(name, description, location, status);
 
     db.create_project(&project).map_err(|e| e.to_string())?;
@@ -33,7 +84,8 @@ pub fn create_project(
 
 #[command]
 pub fn get_projects() -> Result<Vec<Project>, String> {
-    let db = Database::new(DB_PATH).map_err(|e| e.to_string())?;
+    let db_path = get_db_path()?;
+    let db = Database::new(db_path).map_err(|e| e.to_string())?;
     db.get_projects().map_err(|e| e.to_string())
 }
 
@@ -45,7 +97,8 @@ pub fn update_project(
     location: Option<String>,
     status: Option<ProjectStatus>,
 ) -> Result<Project, String> {
-    let db = Database::new(DB_PATH).map_err(|e| e.to_string())?;
+    let db_path = get_db_path()?;
+    let db = Database::new(db_path).map_err(|e| e.to_string())?;
 
     // First, get the existing project
     let mut existing_projects = db.get_projects().map_err(|e| e.to_string())?;
@@ -78,7 +131,8 @@ pub fn update_project(
 
 #[command]
 pub fn delete_project(id: String) -> Result<bool, String> {
-    let db = Database::new(DB_PATH).map_err(|e| e.to_string())?;
+    let db_path = get_db_path()?;
+    let db = Database::new(db_path).map_err(|e| e.to_string())?;
     db.delete_project(&id).map_err(|e| e.to_string())
 }
 
@@ -143,6 +197,9 @@ pub fn open_in_editor(editor: String, location: String, line: Option<u32>) -> Re
         cmd.arg(location);
     }
 
+    // Configure environment to ensure editor commands are accessible
+    configure_command_env(&mut cmd);
+
     cmd.spawn().map_err(|e| e.to_string())?;
 
     Ok(())
@@ -150,7 +207,8 @@ pub fn open_in_editor(editor: String, location: String, line: Option<u32>) -> Re
 
 #[command]
 pub fn get_project_type(id: String) -> Result<String, String> {
-    let db = Database::new(DB_PATH).map_err(|e| e.to_string())?;
+    let db_path = get_db_path()?;
+    let db = Database::new(db_path).map_err(|e| e.to_string())?;
 
     // First, get the existing project
     let mut existing_projects = db.get_projects().map_err(|e| e.to_string())?;
@@ -184,7 +242,8 @@ pub fn get_project_type(id: String) -> Result<String, String> {
 
 #[command]
 pub fn setup_project(id: String, _state: std::sync::Arc<AppState>) -> Result<String, String> {
-    let db = Database::new(DB_PATH).map_err(|e| e.to_string())?;
+    let db_path = get_db_path()?;
+    let db = Database::new(db_path).map_err(|e| e.to_string())?;
     // Get the project
     let project = db
         .get_project_by_id(&id)
@@ -217,7 +276,8 @@ pub fn setup_project(id: String, _state: std::sync::Arc<AppState>) -> Result<Str
 
 #[command]
 pub fn get_project_config(id: String, key: String) -> Result<Option<String>, String> {
-    let db = Database::new(DB_PATH).map_err(|e| e.to_string())?;
+    let db_path = get_db_path()?;
+    let db = Database::new(db_path).map_err(|e| e.to_string())?;
 
     // Get the project location
     let project = db
@@ -263,4 +323,65 @@ pub fn get_project_config(id: String, key: String) -> Result<Option<String>, Str
     }
 
     Ok(None)
+}
+
+#[command]
+pub fn get_laravel_commands(id: String) -> Result<Vec<LaravelCommand>, String> {
+    let db_path = get_db_path()?;
+    let db = Database::new(db_path).map_err(|e| e.to_string())?;
+
+    // Get the project location
+    let project = db
+        .get_project_by_id(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Project not found".to_string())?;
+
+    let location = project.location;
+    let artisan_path = format!("{}/artisan", location);
+
+    if !std::path::Path::new(&artisan_path).exists() {
+        return Err("Artisan not found".to_string());
+    }
+
+    // Run php artisan list --format=json from the project directory
+    let mut cmd = std::process::Command::new("php");
+    cmd.current_dir(&location) // Set working directory to project root
+        .arg("artisan") // Use relative path to artisan
+        .arg("list")
+        .arg("--format=json");
+
+    // Configure environment to ensure PHP is accessible
+    configure_command_env(&mut cmd);
+
+    let output = cmd.output().map_err(|e| {
+        format!(
+            "Failed to execute php artisan: {}. Make sure PHP is installed and in your PATH.",
+            e
+        )
+    })?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+
+    let content = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
+    let json: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+
+    let mut commands = Vec::new();
+
+    if let Some(cmds) = json.get("commands").and_then(|c| c.as_array()) {
+        for cmd in cmds {
+            if let (Some(name), description) = (
+                cmd.get("name").and_then(|n| n.as_str()),
+                cmd.get("description").and_then(|d| d.as_str()),
+            ) {
+                commands.push(LaravelCommand {
+                    name: name.to_string(),
+                    description: description.map(|d| d.to_string()),
+                });
+            }
+        }
+    }
+
+    Ok(commands)
 }

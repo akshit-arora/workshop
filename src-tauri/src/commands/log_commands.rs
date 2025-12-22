@@ -1,13 +1,13 @@
 use crate::database::Database;
+use crate::utils::get_db_path;
 use std::fs;
 use std::path::Path;
 use tauri::command;
 
-const DB_PATH: &str = "projects.db";
-
 #[command]
 pub fn get_log_files(id: String) -> Result<Vec<String>, String> {
-    let db = Database::new(DB_PATH).map_err(|e| e.to_string())?;
+    let db_path = get_db_path()?;
+    let db = Database::new(db_path).map_err(|e| e.to_string())?;
     let project = db
         .get_project_by_id(&id)
         .map_err(|e| e.to_string())?
@@ -44,7 +44,8 @@ pub fn get_log_files(id: String) -> Result<Vec<String>, String> {
 
 #[command]
 pub fn read_log_file(id: String, filename: String) -> Result<String, String> {
-    let db = Database::new(DB_PATH).map_err(|e| e.to_string())?;
+    let db_path = get_db_path()?;
+    let db = Database::new(db_path).map_err(|e| e.to_string())?;
     let project = db
         .get_project_by_id(&id)
         .map_err(|e| e.to_string())?

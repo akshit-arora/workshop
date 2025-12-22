@@ -1,6 +1,6 @@
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::Utc;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Project {
@@ -11,6 +11,7 @@ pub struct Project {
     pub status: ProjectStatus,
     pub created_at: String,
     pub updated_at: String,
+    pub db_config: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -33,6 +34,7 @@ impl Project {
             status,
             created_at: now.clone(),
             updated_at: now,
+            db_config: None,
         }
     }
 }

@@ -56,6 +56,11 @@ const router = createRouter({
       path: '/tools/log-manager',
       name: 'log-manager',
       component: LogManager
+    },
+    {
+      path: '/xterm',
+      name: 'xterm',
+      component: () => import('../views/Xterm.vue')
     }
   ]
 })

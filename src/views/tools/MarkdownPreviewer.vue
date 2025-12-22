@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { marked } from 'marked';
+import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline';
 
 const markdownInput = ref<string>('# Hello World\n\nStart typing markdown here...');
 const renderedMarkdown = ref<string>('');
+const showEditor = ref(true);
 
 watch(markdownInput, async (newVal) => {
     const result = marked.parse(newVal);
@@ -52,13 +54,24 @@ const copyRichText = async () => {
     <div class="h-[calc(100vh-4rem)] flex flex-col p-4 gap-4">
         <div class="flex justify-between items-center">
             <h1 class="text-2xl font-bold">Markdown Previewer</h1>
+            <button class="btn btn-sm btn-ghost gap-2" @click="showEditor = !showEditor">
+                <component :is="showEditor ? EyeSlashIcon : EyeIcon" class="w-5 h-5" />
+                {{ showEditor ? 'Hide Editor' : 'Show Editor' }}
+            </button>
         </div>
         
-        <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 h-full overflow-hidden">
+        <div class="flex-1 grid grid-cols-1 gap-4 h-full overflow-hidden" :class="{ 'md:grid-cols-2': showEditor }">
             <!-- Editor Section -->
-            <div class="flex flex-col h-full bg-base-100 rounded-lg shadow-lg overflow-hidden">
+            <div v-if="showEditor" class="flex flex-col h-full bg-base-100 rounded-lg shadow-lg overflow-hidden">
+                <!-- Add a button to hide the editor -->
                 <div class="bg-base-200 p-2 px-4 border-b border-base-300 flex justify-between items-center">
                     <span class="font-semibold text-sm uppercase tracking-wider">Editor</span>
+                    <button 
+                        class="btn btn-xs btn-ghost"
+                        @click="markdownInput = ''"
+                    >
+                        Clear
+                    </button>
                 </div>
                 <textarea 
                     v-model="markdownInput"

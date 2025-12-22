@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, ref } from 'vue';
+import { inject, Ref, ref } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
 import { PencilSquareIcon } from '@heroicons/vue/24/outline';
 import { invoke } from '@tauri-apps/api/core';
@@ -45,6 +45,8 @@ const statusOptions: StatusOption[] = [
     { label: 'On Hold', value: 'OnHold' },
     { label: 'Abandoned', value: 'Abandoned' }
 ];
+
+const selectedProject = inject<Ref<Project | null>>('selectedProject');
 
 // Project folder selection
 const selectProjectFolder = async (e: MouseEvent) => {
@@ -92,6 +94,12 @@ const confirmDelete = (projectId: string | number) => {
 
 const deleteProject = async (projectId: string | number | null) => {
     if (!fetchProjects || !projectId) return;
+
+    if (selectedProject?.value?.id === projectId) {
+        alert("You cannot delete the project you are currently working on.");
+
+        return;
+    }
 
     try {
         await invoke('delete_project', { id: projectId.toString() });
@@ -217,7 +225,8 @@ fetchProjects();
                                 type="button"
                                 class="btn btn-error btn-sm"
                                 @click="confirmDelete(project.id)"
-                                title="Delete project"
+                                title="Delete project" 
+                                v-if="project.id != selectedProject?.id"
                             >
                                 Delete
                             </button>
@@ -252,7 +261,7 @@ fetchProjects();
                         <textarea
                             id="projectDescription"
                             v-model="projectDescription"
-                            class="textarea textarea-bordered h-24"
+                            class="textarea textarea-bordered h-24 w-full"
                         ></textarea>
                     </div>
 
@@ -340,7 +349,7 @@ fetchProjects();
                         <textarea
                             id="editProjectDescription"
                             v-model="projectDescription"
-                            class="textarea textarea-bordered h-24"
+                            class="textarea textarea-bordered h-24 w-full"
                         ></textarea>
                     </div>
 

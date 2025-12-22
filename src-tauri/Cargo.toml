@@ -1,9 +1,9 @@
 [package]
-name = "workshop"
+name = "Workshop"
 version = "0.1.0"
-description = "A Tauri App"
+description = "A DevX tool for Laravel and other projects"
 license = "MIT"
-authors = ["you"]
+authors = ["Akshit Arora"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -30,3 +30,5 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1.0"
 mysql = "24.0.0"
 dotenv = "0.15.0"
+portable-pty = "0.8"
+dirs = "5.0"

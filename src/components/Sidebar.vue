@@ -25,6 +25,7 @@ const baseMenuItems = ref<MenuItem[]>([
 
 const additionalMenuItems = ref<MenuItem[]>([
     { icon: '💻', label: 'Database Viewer', route: '/database' },
+    { icon: '⌨️', label: 'Terminal', route: '/xterm' },
     { icon: '🛠️', label: 'Tools', route: '/tools' }
 ]);
 
@@ -89,9 +90,9 @@ const menuItems = computed<MenuItem[]>(() => {
                 <h3 class="font-bold text-lg mb-4">About Workshop</h3>
                 <div class="py-4 space-y-4">
                     <div class="flex items-center gap-4">
-                        <div class="avatar placeholder">
-                            <div class="bg-neutral text-neutral-content rounded-full w-12">
-                                <span class="text-xl">W</span>
+                        <div class="avatar">
+                            <div class="w-12">
+                                <img src="/icon.png" alt="Workshop App Icon" />
                             </div>
                         </div>
                         <div>

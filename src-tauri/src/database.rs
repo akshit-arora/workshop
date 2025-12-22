@@ -1,5 +1,6 @@
-use rusqlite::{Connection, Result, params};
 use crate::models::project::{Project, ProjectStatus};
+use rusqlite::{params, Connection, Result};
+use std::path::PathBuf;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -13,7 +14,7 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new(path: &str) -> Result<Self, DatabaseError> {
+    pub fn new(path: PathBuf) -> Result<Self, DatabaseError> {
         let conn = Connection::open(path)?;
         conn.execute(
             "CREATE TABLE IF NOT EXISTS projects (
@@ -23,17 +24,33 @@ impl Database {
                 location TEXT,
                 status TEXT,
                 created_at TEXT,
-                updated_at TEXT
+                updated_at TEXT,
+                db_config TEXT
             )",
             [],
         )?;
+
+        // Migration for existing databases
+        let mut needs_migration = false;
+        {
+            let mut stmt = conn.prepare("PRAGMA table_info(projects)")?;
+            let rows = stmt.query_map([], |row| Ok(row.get::<_, String>(1)?))?;
+            let columns: Vec<String> = rows.filter_map(|r| r.ok()).collect();
+            if !columns.contains(&"db_config".to_string()) {
+                needs_migration = true;
+            }
+        }
+
+        if needs_migration {
+            conn.execute("ALTER TABLE projects ADD COLUMN db_config TEXT", [])?;
+        }
         Ok(Database { conn })
     }
 
     pub fn create_project(&self, project: &Project) -> Result<(), DatabaseError> {
         self.conn.execute(
-            "INSERT INTO projects (id, name, description, location, status, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO projects (id, name, description, location, status, created_at, updated_at, db_config)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 project.id,
                 project.name,
@@ -41,7 +58,8 @@ impl Database {
                 project.location,
                 format!("{:?}", project.status),
                 project.created_at,
-                project.updated_at
+                project.updated_at,
+                project.db_config
             ],
         )?;
         Ok(())
@@ -65,6 +83,7 @@ impl Database {
                 },
                 created_at: row.get(5)?,
                 updated_at: row.get(6)?,
+                db_config: row.get(7).unwrap_or(None),
             })
         })?;
 
@@ -78,14 +97,15 @@ impl Database {
     pub fn update_project(&self, id: &str, updates: &Project) -> Result<(), DatabaseError> {
         self.conn.execute(
             "UPDATE projects
-             SET name = ?1, description = ?2, location = ?3, status = ?4, updated_at = ?5
-             WHERE id = ?6",
+             SET name = ?1, description = ?2, location = ?3, status = ?4, updated_at = ?5, db_config = ?6
+             WHERE id = ?7",
             params![
                 updates.name,
                 updates.description,
                 updates.location,
                 format!("{:?}", updates.status),
                 updates.updated_at,
+                updates.db_config,
                 id
             ],
         )?;
@@ -93,7 +113,9 @@ impl Database {
     }
 
     pub fn delete_project(&self, id: &str) -> Result<bool, DatabaseError> {
-        let affected = self.conn.execute("DELETE FROM projects WHERE id = ?1", params![id])?;
+        let affected = self
+            .conn
+            .execute("DELETE FROM projects WHERE id = ?1", params![id])?;
         Ok(affected > 0)
     }
 
@@ -116,6 +138,7 @@ impl Database {
                 },
                 created_at: row.get(5)?,
                 updated_at: row.get(6)?,
+                db_config: row.get(7).unwrap_or(None),
             };
             Ok(Some(project))
         } else {

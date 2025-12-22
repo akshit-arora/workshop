@@ -45,8 +45,20 @@ interface Project {
  * Represents the current state of a database table
  * including its structure and pagination info
  */
+interface ColumnDetail {
+    name: string;
+    data_type: string;
+    is_nullable: boolean;
+    default_value: string | null;
+}
+
+/**
+ * Represents the current state of a database table
+ * including its structure and pagination info
+ */
 interface TableState {
     columns: string[];
+    column_details: ColumnDetail[];
     rows: TableRow[];
     total: number;
 }
@@ -65,6 +77,7 @@ const tables = ref<string[]>([]);
 const selectedTable = ref<string | null>(null);
 const tableData = ref<TableState>({
     columns: [],
+    column_details: [],
     rows: [],
     total: 0
 });
@@ -190,6 +203,7 @@ const saveDbCredentials = async () => {
         await invoke('save_db_credentials', {
             projectId: selectedProject.value.id,
             credentials: {
+                connection: modalState.dbCredentials.connection,
                 host: modalState.dbCredentials.host,
                 port: modalState.dbCredentials.port,
                 database: modalState.dbCredentials.database,
@@ -240,7 +254,7 @@ const loadSavedQuery = (query: SavedQuery) => {
     } else {
         isRawSqlMode.value = true;
         selectedTable.value = null;
-        tableData.value = { columns: [], rows: [], total: 0 };
+        tableData.value = { columns: [], column_details: [], rows: [], total: 0 };
     }
     queryInput.value = query.query;
     showSaveQueryModal.value = false;
@@ -264,7 +278,7 @@ const removeSavedQuery = (id: number) => {
  * - Fetches initial table list
  */
 onMounted(() => {
-    const saved = localStorage.getItem('savedQueries');
+    const saved = localStorage.getItem('savedQueries.' + selectedProject?.value?.id);
     if (saved) {
         savedQueries.value = JSON.parse(saved);
     }
@@ -282,7 +296,7 @@ watch(() => selectedProject?.value, (newProject) => {
         fetchTableData();
     } else {
         tables.value = [];
-        tableData.value = { columns: [], rows: [], total: 0 };
+        tableData.value = { columns: [], column_details: [], rows: [], total: 0 };
     }
 }, { deep: true });
 
@@ -290,7 +304,7 @@ watch(() => selectedProject?.value, (newProject) => {
  * Persists saved queries to localStorage
  */
 const saveToPersistentStorage = () => {
-    localStorage.setItem('savedQueries', JSON.stringify(savedQueries.value));
+    localStorage.setItem('savedQueries.' + selectedProject?.value?.id, JSON.stringify(savedQueries.value));
 };
 
 // Watch for changes in savedQueries and persist them
@@ -345,7 +359,7 @@ const fetchTableData = async (): Promise<void> => {
         tableData.value = result;
     } catch (error) {
         console.error('Failed to fetch table data:', error);
-        tableData.value = { columns: [], rows: [], total: 0 };
+        tableData.value = { columns: [], column_details: [], rows: [], total: 0 };
         errorState.data = error instanceof Error ? error.message : 'Failed to fetch table data';
     } finally {
         loadingState.data = false;
@@ -373,7 +387,7 @@ const executeCustomQuery = async (): Promise<void> => {
         currentPage.value = 1;
     } catch (error) {
         console.error('Failed to execute query:', error);
-        tableData.value = { columns: [], rows: [], total: 0 };
+        tableData.value = { columns: [], column_details: [], rows: [], total: 0 };
         errorState.query = error instanceof Error ? error.message : 'Failed to execute query';
     } finally {
         loadingState.query = false;
@@ -404,6 +418,7 @@ const modalState = reactive({
     },
     dbCredentials: {
         isOpen: false,
+        connection: 'mysql',
         host: '127.0.0.1',
         port: '3306',
         database: '',
@@ -421,11 +436,31 @@ const metadataState = reactive({
     isOpen: false,
     loading: false,
     activeTab: 'columns' as MetadataTab,
-    columns: { columns: [], rows: [], total: 0 } as TableState,
-    indexes: { columns: [], rows: [], total: 0 } as TableState,
-    triggers: { columns: [], rows: [], total: 0 } as TableState,
+    columns: { columns: [], column_details: [], rows: [], total: 0 } as TableState,
+    indexes: { columns: [], column_details: [], rows: [], total: 0 } as TableState,
+    triggers: { columns: [], column_details: [], rows: [], total: 0 } as TableState,
     error: null as string | null
 });
+
+/**
+ * Generates a descriptive placeholder for a column input
+ */
+const getColumnPlaceholder = (columnName: string): string => {
+    if (!tableData.value.column_details) return columnName;
+    
+    const detail = tableData.value.column_details.find(d => d.name === columnName);
+    if (!detail) return columnName;
+    
+    const parts = [detail.data_type];
+    if (!detail.is_nullable) parts.push('Required');
+    // else parts.push('Nullable'); // Optional: show Nullable or just omit Required
+    
+    if (detail.default_value !== null && detail.default_value !== undefined) {
+        parts.push(`Default: ${detail.default_value}`);
+    }
+    
+    return parts.join(' | ');
+};
 
 const fetchMetadata = async () => {
     if (!selectedTable.value || !selectedProject?.value) return;
@@ -438,19 +473,40 @@ const fetchMetadata = async () => {
         const project = selectedProject.value;
         const tableName = selectedTable.value;
         
+        // Get the database connection type first
+        const dbType = await invoke<string>('get_db_connection_type', {
+            projectId: project.id
+        });
+        
+        let columnsQuery: string;
+        let indexesQuery: string;
+        let triggersQuery: string;
+        
+        if (dbType === 'sqlite') {
+            // SQLite-specific queries
+            columnsQuery = `PRAGMA table_info(${tableName})`;
+            indexesQuery = `PRAGMA index_list(${tableName})`;
+            triggersQuery = `SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger' AND tbl_name='${tableName}'`;
+        } else {
+            // MySQL-specific queries
+            columnsQuery = `SHOW COLUMNS FROM ${tableName}`;
+            indexesQuery = `SHOW INDEX FROM ${tableName}`;
+            triggersQuery = `SHOW TRIGGERS LIKE '${tableName}'`;
+        }
+        
         // Run queries in parallel
         const [columnsRes, indexesRes, triggersRes] = await Promise.all([
             invoke<TableState>('execute_query', {
                 projectId: project.id,
-                query: `SHOW COLUMNS FROM ${tableName}`
+                query: columnsQuery
             }),
             invoke<TableState>('execute_query', {
                 projectId: project.id,
-                query: `SHOW INDEX FROM ${tableName}`
+                query: indexesQuery
             }),
             invoke<TableState>('execute_query', {
                 projectId: project.id,
-                query: `SHOW TRIGGERS LIKE '${tableName}'`
+                query: triggersQuery
             })
         ]);
 
@@ -608,6 +664,9 @@ onUnmounted(() => {
                     v-model="searchQuery"
                     placeholder="Search tables..."
                     class="input input-bordered input-sm w-full"
+                    autocorrect="off"
+                    autocapitalize="off"
+                    spellcheck="false"
                 ></div>
             </div>
             <div class="flex-1 overflow-y-auto">
@@ -854,8 +913,14 @@ onUnmounted(() => {
                                 autocomplete="off"
                                 spellcheck="false"
                                 class="input input-bordered w-full input-sm font-mono"
+                                :placeholder="getColumnPlaceholder(column)"
                             />
-                            <span v-else class="font-mono break-all">{{ modalState.rowDetails.selectedRow[column] }}</span>
+                            <span v-else class="font-mono break-all">{{ 
+                                modalState.rowDetails.selectedRow[column] === null 
+                                ? '' 
+                                : modalState.rowDetails.selectedRow[column] 
+                            }}</span>
+                            <span v-if="!modalState.rowDetails.isEditing && modalState.rowDetails.selectedRow[column] === null" class="text-xs text-base-content/50 italic ml-2">NULL</span>
                         </div>
                     </div>
                 </div>
@@ -890,12 +955,20 @@ onUnmounted(() => {
         <div class="modal-box">
             <h3 class="font-bold text-lg mb-4">Database Connection</h3>
             <p class="text-sm text-base-content/70 mb-4">
-                No database configuration found. Please enter your MySQL connection details.
-                These will be saved to <code class="bg-base-200 px-1 rounded">.workshop/project.json</code>.
+                No database configuration found. Please enter your connection details.
+                These will be saved to the project configuration.
             </p>
             
             <div class="flex flex-col gap-4">
-                <div class="grid grid-cols-2 gap-4">
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Connection Type</span></label>
+                    <select v-model="modalState.dbCredentials.connection" class="select select-bordered w-full">
+                        <option value="mysql">MySQL</option>
+                        <option value="sqlite">SQLite</option>
+                    </select>
+                </div>
+
+                <div v-if="modalState.dbCredentials.connection === 'mysql'" class="grid grid-cols-2 gap-4">
                     <div class="form-control">
                         <label class="label"><span class="label-text">Host</span></label>
                         <input v-model="modalState.dbCredentials.host" type="text" placeholder="127.0.0.1" class="input input-bordered" />
@@ -907,11 +980,14 @@ onUnmounted(() => {
                 </div>
                 
                 <div class="form-control">
-                    <label class="label"><span class="label-text">Database Name</span></label>
-                    <input v-model="modalState.dbCredentials.database" type="text" placeholder="my_database" class="input input-bordered" />
+                    <label class="label"><span class="label-text">{{ modalState.dbCredentials.connection === 'sqlite' ? 'Database Path (Relative to project root)' : 'Database Name' }}</span></label>
+                    <input v-model="modalState.dbCredentials.database" type="text" :placeholder="modalState.dbCredentials.connection === 'sqlite' ? 'database.sqlite' : 'my_database'" class="input input-bordered" />
+                    <label v-if="modalState.dbCredentials.connection === 'sqlite'" class="label">
+                        <span class="label-text-alt text-base-content/60">Example: database/database.sqlite</span>
+                    </label>
                 </div>
                 
-                <div class="grid grid-cols-2 gap-4">
+                <div v-if="modalState.dbCredentials.connection === 'mysql'" class="grid grid-cols-2 gap-4">
                     <div class="form-control">
                         <label class="label"><span class="label-text">Username</span></label>
                         <input v-model="modalState.dbCredentials.username" type="text" placeholder="root" class="input input-bordered" />

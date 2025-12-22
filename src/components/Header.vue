@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { inject, Ref, ref } from 'vue';
+import router from '../router';
 
 // Types
 interface Project {
@@ -13,14 +14,16 @@ const projects = inject<Project[]>('projects', []);
 const selectedProject = inject<Ref<Project | null>>('selectedProject', ref(null));
 
 // Component state
-const projectDropdown = ref<HTMLDivElement | null>(null);
+// const projectDropdown = ref<HTMLDivElement | null>(null);
 
 // Methods
 const selectProject = (project: Project) => {
     if (selectedProject) {
         selectedProject.value = project;
         localStorage.setItem('selectedProject', JSON.stringify(project));
-        projectDropdown.value?.blur();
+        // projectDropdown.value?.blur();
+        // Redirect to the Dashboard
+        router.push('/');
     }
 };
 </script>
