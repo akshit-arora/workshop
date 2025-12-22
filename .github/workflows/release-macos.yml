@@ -12,6 +12,9 @@ jobs:
       matrix:
         platform: [macos-latest]
 
+    permissions:
+      contents: write
+
     runs-on: ${{ matrix.platform }}
 
     steps:
