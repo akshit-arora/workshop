@@ -13,6 +13,7 @@ interface MenuItem {
 import type { Ref } from 'vue';
 const isCollapsed = inject<boolean>('isCollapsed', false);
 const isLaravelProject = inject<Ref<boolean>>('isLaravelProject');
+const selectedProject = inject<Ref<unknown | null>>('selectedProject');
 
 const isAboutOpen = ref(false);
 
@@ -31,8 +32,7 @@ const additionalMenuItems = ref<MenuItem[]>([
 
 // Computed
 const menuItems = computed<MenuItem[]>(() => {
-    const selectedProject = localStorage.getItem('selectedProject');
-    let items = selectedProject
+    let items = selectedProject && selectedProject.value
         ? [...baseMenuItems.value, ...additionalMenuItems.value]
         : [...baseMenuItems.value];
     
