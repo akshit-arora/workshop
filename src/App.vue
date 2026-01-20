@@ -110,7 +110,9 @@ onMounted(async () => {
                 aria-label="Main content"
             >
                 <router-view v-slot="{ Component }">
-                    <component :is="Component" />
+                    <keep-alive include="Xterm">
+                        <component :is="Component" />
+                    </keep-alive>
                 </router-view>
             </main>
         </div>

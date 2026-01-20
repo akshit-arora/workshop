@@ -8,6 +8,7 @@ import LogManager from '../views/tools/LogManager.vue'
 import JSONFormatter from '../views/tools/JSONFormatter.vue'
 import MarkdownPreviewer from '../views/tools/MarkdownPreviewer.vue'
 import SQLBeautifier from '../views/tools/SQLBeautifier.vue'
+import LangManager from '../views/tools/LangManager.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -56,6 +57,11 @@ const router = createRouter({
       path: '/tools/log-manager',
       name: 'log-manager',
       component: LogManager
+    },
+    {
+      path: '/tools/lang-manager',
+      name: 'lang-manager',
+      component: LangManager
     },
     {
       path: '/xterm',

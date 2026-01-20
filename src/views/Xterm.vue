@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, inject, watch, nextTick, type Ref, computed } from 'vue';
+import { ref, onMounted, onUnmounted, inject, watch, nextTick, type Ref, computed, onActivated } from 'vue';
 import { Terminal } from 'xterm';
+
+defineOptions({
+  name: 'Xterm'
+});
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 import { invoke } from '@tauri-apps/api/core';
@@ -247,6 +251,14 @@ onMounted(() => {
     });
     
     window.addEventListener('resize', handleResize);
+});
+
+onActivated(() => {
+    // When the component is reactivated (KeepAlive), ensure the terminal fits the container
+    nextTick(() => {
+        handleResize();
+        term?.focus();
+    });
 });
 
 onUnmounted(() => {

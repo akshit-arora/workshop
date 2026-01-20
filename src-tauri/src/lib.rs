@@ -55,7 +55,10 @@ pub fn run() {
             commands::log_commands::read_log_file,
             commands::terminal_commands::spawn_pty,
             commands::terminal_commands::write_pty,
-            commands::terminal_commands::resize_pty
+            commands::terminal_commands::resize_pty,
+            commands::lang_commands::get_lang_files,
+            commands::lang_commands::read_lang_file,
+            commands::lang_commands::save_lang_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
