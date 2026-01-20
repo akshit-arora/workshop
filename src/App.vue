@@ -75,14 +75,15 @@ onMounted(async () => {
     // Initialize selectedProject from localStorage
     const storedProject = localStorage.getItem('selectedProject');
     if (storedProject) {
-        // Check if stored project exists bin the projects
-        const project = projects.value.find(p => p.id === storedProject);
-        if (!project) {
-            localStorage.removeItem('selectedProject');
-            return;
-        }
         try {
-            selectedProject.value = JSON.parse(storedProject);
+            const parsedProject = JSON.parse(storedProject);
+            // Check if stored project exists bin the projects
+            const project = projects.value.find(p => String(p.id) === String(parsedProject.id));
+            if (!project) {
+                localStorage.removeItem('selectedProject');
+                return;
+            }
+            selectedProject.value = parsedProject;
             // Check project type after restoring selection
             checkProjectType();
         } catch (e) {
