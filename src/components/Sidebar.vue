@@ -38,6 +38,7 @@ const menuItems = computed<MenuItem[]>(() => {
     
     if (isLaravelProject && isLaravelProject.value) {
         items.push({ icon: '📋', label: 'Log Manager', route: '/tools/log-manager' });
+        items.push({ icon: '🌐', label: 'Lang Manager', route: '/tools/lang-manager' });
     }
 
     // Add About item
