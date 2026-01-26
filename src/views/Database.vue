@@ -61,6 +61,8 @@ interface TableState {
     column_details: ColumnDetail[];
     rows: TableRow[];
     total: number;
+    has_more: boolean;
+    execution_duration_ms?: number;
 }
 
 /** Valid page sizes for table pagination */
@@ -79,7 +81,8 @@ const tableData = ref<TableState>({
     columns: [],
     column_details: [],
     rows: [],
-    total: 0
+    total: 0,
+    has_more: false
 });
 
 /**
@@ -90,7 +93,8 @@ const loadingState = reactive({
     tables: false,  // Loading state for table list
     data: false,    // Loading state for table data
     query: false,   // Loading state for query execution
-    deleting: false // Deleting a row
+    deleting: false, // Deleting a row
+    total: false    // Loading state for total row count
 });
 
 /**
@@ -122,6 +126,7 @@ const savedQueries = ref<SavedQuery[]>([]);
 const currentPage = ref<number>(1);
 const perPage = ref<PageSize>(20);
 const pageSizeOptions = [20, 50, 100] as const;
+const totalRowsCount = ref<number | null>(null);
 
 /**
  * Injected State
@@ -254,7 +259,7 @@ const loadSavedQuery = (query: SavedQuery) => {
     } else {
         isRawSqlMode.value = true;
         selectedTable.value = null;
-        tableData.value = { columns: [], column_details: [], rows: [], total: 0 };
+        tableData.value = { columns: [], column_details: [], rows: [], total: 0, has_more: false };
     }
     queryInput.value = query.query;
     showSaveQueryModal.value = false;
@@ -296,7 +301,7 @@ watch(() => selectedProject?.value, (newProject) => {
         fetchTableData();
     } else {
         tables.value = [];
-        tableData.value = { columns: [], column_details: [], rows: [], total: 0 };
+        tableData.value = { columns: [], column_details: [], rows: [], total: 0, has_more: false };
     }
 }, { deep: true });
 
@@ -330,7 +335,7 @@ const handlePageSizeChange = (event: Event): void => {
     if (isValidPageSize(size)) {
         perPage.value = size;
         currentPage.value = 1; // Reset to first page when changing page size
-        fetchTableData();
+        fetchTableData(true);
     }
 };
 
@@ -338,9 +343,13 @@ const handlePageSizeChange = (event: Event): void => {
  * Fetches data for the selected table with pagination
  * Updates tableData state and handles loading/error states
  */
-const fetchTableData = async (): Promise<void> => {
+const fetchTableData = async (preserveTotal: boolean = false): Promise<void> => {
     loadingState.data = true;
     errorState.data = null;
+    
+    if (!preserveTotal) {
+        totalRowsCount.value = null; 
+    } 
 
     try {
         if (!selectedProject?.value) {
@@ -359,10 +368,31 @@ const fetchTableData = async (): Promise<void> => {
         tableData.value = result;
     } catch (error) {
         console.error('Failed to fetch table data:', error);
-        tableData.value = { columns: [], column_details: [], rows: [], total: 0 };
+        tableData.value = { columns: [], column_details: [], rows: [], total: 0, has_more: false };
         errorState.data = error instanceof Error ? error.message : 'Failed to fetch table data';
     } finally {
         loadingState.data = false;
+    }
+};
+
+/**
+ * Fetches the total number of rows for the current table/query
+ */
+const fetchTotalRows = async (): Promise<void> => {
+    if (!selectedProject?.value || !selectedTable.value) return;
+
+    loadingState.total = true;
+    try {
+        const total = await invoke<number>('get_table_total_count', {
+            projectId: selectedProject.value.id,
+            tableName: selectedTable.value,
+            whereClause: queryInput.value.trim()
+        });
+        totalRowsCount.value = total;
+    } catch (e) {
+        console.error('Failed to fetch total rows:', e);
+    } finally {
+        loadingState.total = false;
     }
 };
 
@@ -387,7 +417,7 @@ const executeCustomQuery = async (): Promise<void> => {
         currentPage.value = 1;
     } catch (error) {
         console.error('Failed to execute query:', error);
-        tableData.value = { columns: [], column_details: [], rows: [], total: 0 };
+        tableData.value = { columns: [], column_details: [], rows: [], total: 0, has_more: false };
         errorState.query = error instanceof Error ? error.message : 'Failed to execute query';
     } finally {
         loadingState.query = false;
@@ -436,9 +466,9 @@ const metadataState = reactive({
     isOpen: false,
     loading: false,
     activeTab: 'columns' as MetadataTab,
-    columns: { columns: [], column_details: [], rows: [], total: 0 } as TableState,
-    indexes: { columns: [], column_details: [], rows: [], total: 0 } as TableState,
-    triggers: { columns: [], column_details: [], rows: [], total: 0 } as TableState,
+    columns: { columns: [], column_details: [], rows: [], total: 0, has_more: false } as TableState,
+    indexes: { columns: [], column_details: [], rows: [], total: 0, has_more: false } as TableState,
+    triggers: { columns: [], column_details: [], rows: [], total: 0, has_more: false } as TableState,
     error: null as string | null
 });
 
@@ -788,7 +818,19 @@ onUnmounted(() => {
                     <div class="flex justify-between items-center mb-4 px-1">
                         <h3 class="text-lg font-bold flex items-center gap-2">
                             {{ isRawSqlMode ? 'Query Results' : selectedTable }}
-                            <span class="badge badge-sm">{{ tableData.total }} rows</span>
+                            <span class="badge badge-sm" v-if="totalRowsCount !== null">
+                                {{ totalRowsCount }} rows
+                            </span>
+                            <button 
+                                v-else-if="tableData.has_more"
+                                class="badge badge-sm badge-outline cursor-pointer hover:bg-base-200 gap-1"
+                                @click="() => fetchTotalRows()"
+                                :disabled="loadingState.total"
+                            >
+                                <span v-if="loadingState.total" class="loading loading-spinner loading-xs"></span>
+                                {{ (tableData.rows.length < perPage) ? tableData.rows.length : perPage }}+ rows
+                            </button>
+                            <span class="badge badge-sm" v-else>{{ tableData.rows.length }} rows</span>
                         </h3>
                         <button @click="fetchMetadata" class="btn btn-sm btn-outline gap-2">
                             <InformationCircleIcon class="w-4 h-4" />
@@ -834,7 +876,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Pagination -->
-                <div v-if="!isRawSqlMode && selectedTable && tableData.total > 0" class="flex justify-between items-center p-4">
+                <div v-if="!isRawSqlMode && selectedTable && tableData.rows.length > 0" class="flex justify-between items-center p-4">
                     <div class="flex items-center gap-4">
                         <select
                             class="select select-bordered select-sm w-24"
@@ -845,22 +887,28 @@ onUnmounted(() => {
                                 {{ size }} rows
                             </option>
                         </select>
-                        <div class="text-sm text-base-content/70">
-                            Showing {{ (currentPage - 1) * perPage + 1 }} to {{ Math.min(currentPage * perPage, tableData.total) }} of {{ tableData.total }} entries
+                        <div class="text-sm text-base-content/70 flex items-center gap-2">
+                            <span>Showing {{ (currentPage - 1) * perPage + 1 }} - {{ (currentPage - 1) * perPage + tableData.rows.length }}</span>
+                            <span v-if="tableData.execution_duration_ms !== undefined" class="text-xs opacity-50 border-l border-base-content/20 pl-2">
+                                {{ tableData.execution_duration_ms }}ms
+                            </span>
                         </div>
                     </div>
                     <div class="join">
                         <button
                             class="join-item btn btn-sm"
-                            :disabled="currentPage === 1"
-                            @click="currentPage--; fetchTableData();"
+                            :disabled="currentPage === 1 || loadingState.data"
+                            @click="currentPage--; fetchTableData(true);"
                         >
                             Previous
                         </button>
+                        <button class="join-item btn btn-sm btn-disabled">
+                            Page {{ currentPage }}
+                        </button>
                         <button
                             class="join-item btn btn-sm"
-                            :disabled="currentPage * perPage >= tableData.total"
-                            @click="currentPage++; fetchTableData();"
+                            :disabled="!tableData.has_more || loadingState.data"
+                            @click="currentPage++; fetchTableData(true);"
                         >
                             Next
                         </button>

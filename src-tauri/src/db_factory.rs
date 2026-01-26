@@ -28,6 +28,11 @@ pub trait DbBackend {
         pk_value: &str,
         data: HashMap<String, Option<String>>,
     ) -> Result<u64, String>;
+    fn get_total_rows(
+        &mut self,
+        table_name: &str,
+        where_clause: Option<String>,
+    ) -> Result<u64, String>;
 }
 
 pub struct MySqlBackend {
@@ -93,46 +98,39 @@ impl DbBackend for MySqlBackend {
         per_page: u32,
         where_clause: Option<String>,
     ) -> Result<TableData, String> {
+        let start = std::time::Instant::now();
         let mut conn = self.pool.get_conn().map_err(|e| e.to_string())?;
 
         // This logic mimics the original implementation
         let mut where_clause_for_select = String::new();
-        let mut where_clause_for_count = String::new();
         let limit = per_page;
         let mut has_limit_in_where = false;
 
         if let Some(clause) = where_clause {
             if !clause.trim().is_empty() {
                 let upper_clause = clause.to_uppercase();
-                if let Some(index) = upper_clause.rfind("LIMIT") {
-                    where_clause_for_count = format!(" WHERE {}", &clause[..index].trim());
+                if upper_clause.rfind("LIMIT").is_some() {
                     where_clause_for_select = format!(" WHERE {}", clause);
                     has_limit_in_where = true;
                 } else {
                     where_clause_for_select = format!(" WHERE {}", clause);
-                    where_clause_for_count = where_clause_for_select.clone();
                 }
             }
         }
 
         let offset = (page - 1) * limit;
 
-        // Count
-        let count: u32 = conn
-            .query_first(format!(
-                "SELECT COUNT(*) FROM {}{}",
-                table_name, where_clause_for_count
-            ))
-            .map_err(|e| e.to_string())?
-            .unwrap_or(0);
-
         // Data
+        // We fetch one more row than requested to determine if there are more pages
         let query = if has_limit_in_where {
             format!("SELECT * FROM {}{}", table_name, where_clause_for_select)
         } else {
             format!(
                 "SELECT * FROM {}{} LIMIT {} OFFSET {}",
-                table_name, where_clause_for_select, limit, offset
+                table_name,
+                where_clause_for_select,
+                limit + 1,
+                offset
             )
         };
 
@@ -165,15 +163,24 @@ impl DbBackend for MySqlBackend {
             data.push(row_data);
         }
 
+        let mut has_more = false;
+        if data.len() > limit as usize {
+            data.pop();
+            has_more = true;
+        }
+
         Ok(TableData {
-            total: count,
+            total: 0, // Deprecated/Unused
+            has_more,
             columns,
             column_details,
             rows: data,
+            execution_duration_ms: Some(start.elapsed().as_millis() as u64),
         })
     }
 
     fn execute_query(&mut self, query: &str) -> Result<TableData, String> {
+        let start = std::time::Instant::now();
         let mut conn = self.pool.get_conn().map_err(|e| e.to_string())?;
         let rows: Vec<mysql::Row> = conn.query(query).map_err(|e| e.to_string())?;
 
@@ -206,9 +213,11 @@ impl DbBackend for MySqlBackend {
 
         Ok(TableData {
             total: data.len() as u32,
+            has_more: false,
             columns,
             column_details,
             rows: data,
+            execution_duration_ms: Some(start.elapsed().as_millis() as u64),
         })
     }
 
@@ -258,6 +267,62 @@ impl DbBackend for MySqlBackend {
         );
         conn.exec_drop(query, params).map_err(|e| e.to_string())?;
         Ok(conn.affected_rows())
+    }
+
+    fn get_total_rows(
+        &mut self,
+        table_name: &str,
+        where_clause: Option<String>,
+    ) -> Result<u64, String> {
+        let mut conn = self.pool.get_conn().map_err(|e| e.to_string())?;
+        let mut where_clause_for_count = String::new();
+
+        if let Some(clause) = where_clause {
+            if !clause.trim().is_empty() {
+                // Remove LIMIT if present for count query, though usually count queries don't have limit unless subquery
+                // Simple approach: just append WHERE
+                // Ideally we should strip LIMIT/OFFSET from where_clause if it was just passed raw
+                // But typically where_clause passed here shouldn't contain LIMIT for a COUNT(*)
+                // However, the frontend passes the same specific "where input"
+                // The frontend "whereClause" input is just the condition "ID > 5" usually.
+                // But the `get_table_data` implementation checks for "LIMIT" keyword in the where input.
+                // We should probably do the same check to be safe, or just assume COUNT ignores it or it's valid SQL.
+                // MySQL: SELECT COUNT(*) FROM table WHERE ... LIMIT ... is valid but LIMIT applies to the count result (1 row).
+                // If the user typed "LIMIT 5" in the filter box, they might mean "Show me only 5 rows".
+                // If they check total, they might expect the total matching that filter?
+                // If filter is "id > 0 LIMIT 5", total matching is 5?
+                // Let's stick to the same logic as get_table_data for building the WHERE clause.
+
+                // Actually, if the user manually typed "LIMIT 10" in the filter box:
+                // SELECT * FROM table WHERE LIMIT 10 -> Syntax error.
+                // The user is expected to type "id > 5" or "name LIKE 'x%'".
+                // get_table_data handles "col = val LIMIT 5".
+                // Let's copy the logic roughly: use the whole clause.
+                // If it contains LIMIT, we keep it. SELECT COUNT(*) ... WHERE ... LIMIT 5 returns 1 row (the count).
+                // Wait, "WHERE id > 5 LIMIT 10". SELECT COUNT(*) FROM table WHERE id > 5 LIMIT 10.
+                // This returns the count of rows where id > 5. The LIMIT 10 applies to the result set of COUNT(*), which is 1 row.
+                // So LIMIT has no effect on the count value itself in MySQL for a simple count.
+                // UNLESS the user mistakenly types "LIMIT 5" as the *entire* clause and we prepend WHERE.
+                // "SELECT * FROM table WHERE LIMIT 5" -> Error.
+                // The get_table_data code does:
+                // if upper_clause.rfind("LIMIT").is_some() { where_clause_for_select = format!(" WHERE {}", clause); }
+                // else { where_clause_for_select = format!(" WHERE {}", clause); }
+                // It treats them the same?
+                // Ah, line 108 vs 111 in get_table_data: both do `format!(" WHERE {}", clause)`.
+                // The only difference is `has_limit_in_where = true`.
+                // So we can just prepend WHERE if not empty.
+
+                where_clause_for_count = format!(" WHERE {}", clause);
+            }
+        }
+
+        let query = format!(
+            "SELECT COUNT(*) FROM {}{}",
+            table_name, where_clause_for_count
+        );
+        let count: Option<u64> = conn.query_first(query).map_err(|e| e.to_string())?;
+
+        Ok(count.unwrap_or(0))
     }
 }
 
@@ -309,48 +374,38 @@ impl DbBackend for SqliteBackend {
         per_page: u32,
         where_clause: Option<String>,
     ) -> Result<TableData, String> {
+        let start = std::time::Instant::now();
         // Logic similar to MySql implementation but for SQLite
         let mut where_clause_for_select = String::new();
-        let mut where_clause_for_count = String::new();
         let limit = per_page;
         let mut has_limit_in_where = false;
 
         if let Some(clause) = where_clause {
             if !clause.trim().is_empty() {
                 let upper_clause = clause.to_uppercase();
-                if let Some(index) = upper_clause.rfind("LIMIT") {
-                    where_clause_for_count = format!(" WHERE {}", &clause[..index].trim());
+                if upper_clause.rfind("LIMIT").is_some() {
                     where_clause_for_select = format!(" WHERE {}", clause);
                     has_limit_in_where = true;
                 } else {
                     where_clause_for_select = format!(" WHERE {}", clause);
-                    where_clause_for_count = where_clause_for_select.clone();
+                    // where_clause_for_count = where_clause_for_select.clone(); // Unused
                 }
             }
         }
 
         let offset = (page - 1) * limit;
 
-        // Count
-        let count: u32 = self
-            .conn
-            .query_row(
-                &format!(
-                    "SELECT COUNT(*) FROM {}{}",
-                    table_name, where_clause_for_count
-                ),
-                [],
-                |row| row.get(0),
-            )
-            .map_err(|e| e.to_string())?;
-
         // Data
+        // We fetch one more row than requested to determine has_more
         let query = if has_limit_in_where {
             format!("SELECT * FROM {}{}", table_name, where_clause_for_select)
         } else {
             format!(
                 "SELECT * FROM {}{} LIMIT {} OFFSET {}",
-                table_name, where_clause_for_select, limit, offset
+                table_name,
+                where_clause_for_select,
+                limit + 1,
+                offset
             )
         };
 
@@ -395,15 +450,24 @@ impl DbBackend for SqliteBackend {
             });
         }
 
+        let mut has_more = false;
+        if data.len() > limit as usize {
+            data.pop();
+            has_more = true;
+        }
+
         Ok(TableData {
-            total: count,
+            total: 0, // Deprecated/Unused
+            has_more,
             columns,
             column_details,
             rows: data,
+            execution_duration_ms: Some(start.elapsed().as_millis() as u64),
         })
     }
 
     fn execute_query(&mut self, query: &str) -> Result<TableData, String> {
+        let start = std::time::Instant::now();
         let mut stmt = self.conn.prepare(query).map_err(|e| e.to_string())?;
 
         let columns: Vec<String> = stmt
@@ -443,9 +507,11 @@ impl DbBackend for SqliteBackend {
 
         Ok(TableData {
             total: data.len() as u32,
+            has_more: false,
             columns,
             column_details,
             rows: data,
+            execution_duration_ms: Some(start.elapsed().as_millis() as u64),
         })
     }
 
@@ -498,12 +564,38 @@ impl DbBackend for SqliteBackend {
             .map_err(|e| e.to_string())?;
         Ok(affected as u64)
     }
+
+    fn get_total_rows(
+        &mut self,
+        table_name: &str,
+        where_clause: Option<String>,
+    ) -> Result<u64, String> {
+        let mut where_clause_for_count = String::new();
+
+        if let Some(clause) = where_clause {
+            if !clause.trim().is_empty() {
+                where_clause_for_count = format!(" WHERE {}", clause);
+            }
+        }
+
+        let query = format!(
+            "SELECT COUNT(*) FROM {}{}",
+            table_name, where_clause_for_count
+        );
+
+        let mut stmt = self.conn.prepare(&query).map_err(|e| e.to_string())?;
+        let count: u64 = stmt
+            .query_row([], |row| row.get(0))
+            .map_err(|e| e.to_string())?;
+
+        Ok(count)
+    }
 }
 
 pub fn get_db_backend(
     creds: &DbCredentials,
     project_path: &str,
-) -> Result<Box<dyn DbBackend>, String> {
+) -> Result<Box<dyn DbBackend + Send>, String> {
     match creds.connection.as_str() {
         "mysql" => Ok(Box::new(MySqlBackend::new(creds)?)),
         "sqlite" => {

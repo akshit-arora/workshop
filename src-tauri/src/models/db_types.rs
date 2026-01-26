@@ -12,9 +12,12 @@ pub struct ColumnDetail {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TableData {
     pub total: u32,
+    pub has_more: bool,
     pub columns: Vec<String>,
     pub column_details: Vec<ColumnDetail>, // Added for enriched metadata
     pub rows: Vec<HashMap<String, Option<String>>>, // Changed to Option<String> to handle NULLs
+    #[serde(default)] // Default to None if missing in JSON (though we control serialization)
+    pub execution_duration_ms: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

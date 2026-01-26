@@ -20,6 +20,10 @@ pub fn run() {
         terminal_sessions: Mutex::new(std::collections::HashMap::new()),
     });
 
+    let db_manager = state::DbConnectionManager {
+        connections: Mutex::new(std::collections::HashMap::new()),
+    };
+
     // Spawn background thread to listen for project_created events
     let thread_state = app_state.clone();
     std::thread::spawn(move || {
@@ -34,12 +38,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(app_state.clone())
+        .manage(db_manager)
         .invoke_handler(tauri::generate_handler![
             greet,
             commands::project_commands::create_project,
             commands::project_commands::get_projects,
             commands::db_tool_commands::get_project_tables,
             commands::db_tool_commands::get_table_data,
+            commands::db_tool_commands::get_table_total_count,
             commands::db_tool_commands::execute_query,
             commands::db_tool_commands::delete_row,
             commands::db_tool_commands::update_row,
