@@ -7,7 +7,9 @@ import {
     BookmarkIcon,
     TrashIcon,
     InformationCircleIcon,
-    Cog6ToothIcon
+    Cog6ToothIcon,
+    ArrowUpIcon,
+    ArrowDownIcon
 } from '@heroicons/vue/24/outline';
 
 //-----------------------------------------------------------------------------
@@ -127,6 +129,17 @@ const currentPage = ref<number>(1);
 const perPage = ref<PageSize>(20);
 const pageSizeOptions = [20, 50, 100] as const;
 const totalRowsCount = ref<number | null>(null);
+
+/**
+ * Sort State
+ */
+const currentSort = ref<{
+    column: string | null;
+    direction: 'ASC' | 'DESC';
+}>({
+    column: null,
+    direction: 'ASC'
+});
 
 /**
  * Injected State
@@ -362,7 +375,9 @@ const fetchTableData = async (preserveTotal: boolean = false): Promise<void> => 
             tableName: selectedTable.value,
             page: currentPage.value,
             perPage: perPage.value,
-            whereClause: queryInput.value.trim()
+            whereClause: queryInput.value.trim(),
+            sortColumn: currentSort.value.column,
+            sortDirection: currentSort.value.direction
         });
 
         tableData.value = result;
@@ -559,6 +574,25 @@ const selectTable = (table: string): void => {
     currentPage.value = 1; // Reset to first page
     // Reset the query input when a new table is selected
     queryInput.value = '';
+    // Reset sort state
+    currentSort.value = { column: null, direction: 'ASC' };
+    fetchTableData();
+};
+
+/**
+ * Toggles the sort order for a given column
+ */
+const toggleSort = (column: string) => {
+    if (isRawSqlMode.value) return;
+
+    if (currentSort.value.column === column) {
+        // Toggle direction
+        currentSort.value.direction = currentSort.value.direction === 'ASC' ? 'DESC' : 'ASC';
+    } else {
+        // New column, default to ASC
+        currentSort.value.column = column;
+        currentSort.value.direction = 'ASC';
+    }
     fetchTableData();
 };
 
@@ -842,8 +876,19 @@ onUnmounted(() => {
                             <table class="table table-zebra table-pin-rows">
                                 <thead class="bg-base-100 z-10">
                                     <tr>
-                                        <th v-for="column in tableColumns" :key="column" class="whitespace-nowrap">
-                                            {{ column }}
+                                        <th 
+                                            v-for="column in tableColumns" 
+                                            :key="column" 
+                                            class="whitespace-nowrap cursor-pointer hover:bg-base-200 transition-colors select-none"
+                                            @click="toggleSort(column)"
+                                        >
+                                            <div class="flex items-center gap-2">
+                                                {{ column }}
+                                                <span v-if="currentSort.column === column" class="text-primary">
+                                                    <ArrowUpIcon v-if="currentSort.direction === 'ASC'" class="w-4 h-4" />
+                                                    <ArrowDownIcon v-else class="w-4 h-4" />
+                                                </span>
+                                            </div>
                                         </th>
                                         <th v-if="!isRawSqlMode" class="sticky right-0 bg-base-100 w-28 shadow-[-5px_0_5px_-5px_rgba(0,0,0,0.1)]">Actions</th>
                                     </tr>

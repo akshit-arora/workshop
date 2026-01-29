@@ -208,9 +208,18 @@ pub fn get_table_data(
     page: u32,
     per_page: u32,
     where_clause: Option<String>,
+    sort_column: Option<String>,
+    sort_direction: Option<String>,
 ) -> Result<TableData, String> {
     with_db_backend(&state, &project_id, |backend| {
-        backend.get_table_data(&table_name, page, per_page, where_clause)
+        backend.get_table_data(
+            &table_name,
+            page,
+            per_page,
+            where_clause,
+            sort_column,
+            sort_direction,
+        )
     })
 }
 

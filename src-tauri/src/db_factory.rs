@@ -13,6 +13,8 @@ pub trait DbBackend {
         page: u32,
         per_page: u32,
         where_clause: Option<String>,
+        sort_column: Option<String>,
+        sort_direction: Option<String>,
     ) -> Result<TableData, String>;
     fn execute_query(&mut self, query: &str) -> Result<TableData, String>;
     fn delete_row(
@@ -97,6 +99,8 @@ impl DbBackend for MySqlBackend {
         page: u32,
         per_page: u32,
         where_clause: Option<String>,
+        sort_column: Option<String>,
+        sort_direction: Option<String>,
     ) -> Result<TableData, String> {
         let start = std::time::Instant::now();
         let mut conn = self.pool.get_conn().map_err(|e| e.to_string())?;
@@ -120,15 +124,32 @@ impl DbBackend for MySqlBackend {
 
         let offset = (page - 1) * limit;
 
+        // Sorting
+        let mut order_by_clause = String::new();
+        if let Some(col) = sort_column {
+            if !col.trim().is_empty() {
+                // Determine direction
+                let dir = sort_direction
+                    .map(|d| d.to_uppercase())
+                    .unwrap_or_else(|| "ASC".to_string());
+                let dir = if dir == "DESC" { "DESC" } else { "ASC" };
+
+                // Sanitize column name (basic check or quoting)
+                // Using backticks for MySQL
+                order_by_clause = format!(" ORDER BY `{}` {}", col.replace("`", "``"), dir);
+            }
+        }
+
         // Data
         // We fetch one more row than requested to determine if there are more pages
         let query = if has_limit_in_where {
             format!("SELECT * FROM {}{}", table_name, where_clause_for_select)
         } else {
             format!(
-                "SELECT * FROM {}{} LIMIT {} OFFSET {}",
+                "SELECT * FROM {}{}{} LIMIT {} OFFSET {}",
                 table_name,
                 where_clause_for_select,
+                order_by_clause,
                 limit + 1,
                 offset
             )
@@ -373,6 +394,8 @@ impl DbBackend for SqliteBackend {
         page: u32,
         per_page: u32,
         where_clause: Option<String>,
+        sort_column: Option<String>,
+        sort_direction: Option<String>,
     ) -> Result<TableData, String> {
         let start = std::time::Instant::now();
         // Logic similar to MySql implementation but for SQLite
@@ -395,15 +418,30 @@ impl DbBackend for SqliteBackend {
 
         let offset = (page - 1) * limit;
 
+        // Sorting
+        let mut order_by_clause = String::new();
+        if let Some(col) = sort_column {
+            if !col.trim().is_empty() {
+                let dir = sort_direction
+                    .map(|d| d.to_uppercase())
+                    .unwrap_or_else(|| "ASC".to_string());
+                let dir = if dir == "DESC" { "DESC" } else { "ASC" };
+
+                // Sanitize/Quote for SQLite (double quotes)
+                order_by_clause = format!(" ORDER BY \"{}\" {}", col.replace("\"", "\"\""), dir);
+            }
+        }
+
         // Data
         // We fetch one more row than requested to determine has_more
         let query = if has_limit_in_where {
             format!("SELECT * FROM {}{}", table_name, where_clause_for_select)
         } else {
             format!(
-                "SELECT * FROM {}{} LIMIT {} OFFSET {}",
+                "SELECT * FROM {}{}{} LIMIT {} OFFSET {}",
                 table_name,
                 where_clause_for_select,
+                order_by_clause,
                 limit + 1,
                 offset
             )
