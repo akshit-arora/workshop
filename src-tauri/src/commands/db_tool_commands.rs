@@ -1,13 +1,14 @@
 use crate::database::Database;
 use crate::db_factory::{get_db_backend, DbBackend};
 use crate::models::db_types::{DbCredentials, TableData};
+use crate::state::DbConnectionManager;
 use crate::utils::get_db_path;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use tauri::command;
+use tauri::{command, State};
 
-fn connect_database(project_id: &str) -> Result<Box<dyn DbBackend>, String> {
+fn create_db_backend(project_id: &str) -> Result<Box<dyn DbBackend + Send>, String> {
     // Get project location
     let db_path = get_db_path()?;
     let db = Database::new(db_path)
@@ -70,17 +71,12 @@ fn connect_database(project_id: &str) -> Result<Box<dyn DbBackend>, String> {
                         });
                     }
                 } else if conn == "sqlite" {
-                    // For SQLite, DB_DATABASE usually holds the path
-                    // It might be absolute or relative to project root
-                    // Usually in Laravel it's "database.sqlite" which means "database/database.sqlite" relative to app,
-                    // but in .env it might simply be the filename.
-                    // But typically Laravel uses `DB_DATABASE` env var for the path if using sqlite.
                     if let Some(d) = get_env("DB_DATABASE") {
                         creds = Some(DbCredentials {
                             connection: "sqlite".to_string(),
                             host: None,
                             port: None,
-                            database: d, // This will be resolved relative to project path in factory
+                            database: d,
                             username: None,
                             password: None,
                         });
@@ -99,11 +95,7 @@ fn connect_database(project_id: &str) -> Result<Box<dyn DbBackend>, String> {
         }
     }
 
-    // Fallback: Check .workshop/project.json for backward compatibility or migration?
-    // The user said "Save that in the application database instead... where we save project related information".
-    // I should probably support reading the old one, but for now I'll prioritize the new one.
-    // If I want to support migration, I could check the old file here.
-    // Let's implement reading the old file if db_config is missing, just in case.
+    // Fallback: Check .workshop/project.json
     if creds.is_none() {
         let project_json_path = Path::new(&project.location)
             .join(".workshop")
@@ -130,14 +122,53 @@ fn connect_database(project_id: &str) -> Result<Box<dyn DbBackend>, String> {
     }
 
     if let Some(c) = creds {
+        // Here we ensure the backend is Send (impl DbBackend + Send)
+        // But get_db_backend returns Box<dyn DbBackend>. We need to cast or rely on coherence?
+        // Let's modify get_db_backend signature in db_factory?
+        // Or assume it returns Send?
+        // db_factory::get_db_backend returns Result<Box<dyn DbBackend>, String>
+        // Use a cast or wrapper? Box<dyn DbBackend> is not necessarily Box<dyn DbBackend + Send>.
+        // I need to change db_factory logic or return type.
+        // Actually, I'll update db_factory to return Box<dyn DbBackend + Send>.
         return get_db_backend(&c, &project.location);
     }
 
-    Err("Database configuration not found. Please ensure either a .env file with DB credentials exists or configure the database settings.".to_string())
+    Err("Database configuration not found.".to_string())
+}
+
+fn with_db_backend<F, R>(
+    state: &State<DbConnectionManager>,
+    project_id: &str,
+    f: F,
+) -> Result<R, String>
+where
+    F: FnOnce(&mut Box<dyn DbBackend + Send>) -> Result<R, String>,
+{
+    let mut connections = state.connections.lock().map_err(|e| e.to_string())?;
+
+    if !connections.contains_key(project_id) {
+        let backend = create_db_backend(project_id)?;
+        connections.insert(project_id.to_string(), backend);
+    }
+
+    let backend = connections
+        .get_mut(project_id)
+        .ok_or("Failed to retrieve connection")?;
+    f(backend)
 }
 
 #[command(rename_all = "camelCase")]
-pub fn save_db_credentials(project_id: String, credentials: DbCredentials) -> Result<(), String> {
+pub fn save_db_credentials(
+    state: State<DbConnectionManager>,
+    project_id: String,
+    credentials: DbCredentials,
+) -> Result<(), String> {
+    // Invalidate existing connection
+    {
+        let mut connections = state.connections.lock().map_err(|e| e.to_string())?;
+        connections.remove(&project_id);
+    }
+
     // Get project location
     let db_path = get_db_path()?;
     let db = Database::new(db_path)
@@ -162,54 +193,88 @@ pub fn save_db_credentials(project_id: String, credentials: DbCredentials) -> Re
 }
 
 #[command]
-pub fn get_project_tables(project_id: String) -> Result<Vec<String>, String> {
-    let mut backend = connect_database(&project_id)?;
-    backend.get_tables()
+pub fn get_project_tables(
+    state: State<DbConnectionManager>,
+    project_id: String,
+) -> Result<Vec<String>, String> {
+    with_db_backend(&state, &project_id, |backend| backend.get_tables())
 }
 
 #[command]
 pub fn get_table_data(
+    state: State<DbConnectionManager>,
     project_id: String,
     table_name: String,
     page: u32,
     per_page: u32,
     where_clause: Option<String>,
+    sort_column: Option<String>,
+    sort_direction: Option<String>,
 ) -> Result<TableData, String> {
-    let mut backend = connect_database(&project_id)?;
-    backend.get_table_data(&table_name, page, per_page, where_clause)
+    with_db_backend(&state, &project_id, |backend| {
+        backend.get_table_data(
+            &table_name,
+            page,
+            per_page,
+            where_clause,
+            sort_column,
+            sort_direction,
+        )
+    })
+}
+
+#[command]
+pub fn get_table_total_count(
+    state: State<DbConnectionManager>,
+    project_id: String,
+    table_name: String,
+    where_clause: Option<String>,
+) -> Result<u64, String> {
+    with_db_backend(&state, &project_id, |backend| {
+        backend.get_total_rows(&table_name, where_clause)
+    })
 }
 
 #[command(rename_all = "camelCase")]
-pub fn execute_query(project_id: String, query: String) -> Result<TableData, String> {
-    let mut backend = connect_database(&project_id)?;
-    backend.execute_query(&query)
+pub fn execute_query(
+    state: State<DbConnectionManager>,
+    project_id: String,
+    query: String,
+) -> Result<TableData, String> {
+    with_db_backend(&state, &project_id, |backend| backend.execute_query(&query))
 }
 
 #[command(rename_all = "camelCase")]
 pub fn delete_row(
+    state: State<DbConnectionManager>,
     project_id: String,
     table_name: String,
     pk_column: String,
     pk_value: String,
 ) -> Result<u64, String> {
-    let mut backend = connect_database(&project_id)?;
-    backend.delete_row(&table_name, &pk_column, &pk_value)
+    with_db_backend(&state, &project_id, |backend| {
+        backend.delete_row(&table_name, &pk_column, &pk_value)
+    })
 }
 
 #[command(rename_all = "camelCase")]
 pub fn update_row(
+    state: State<DbConnectionManager>,
     project_id: String,
     table_name: String,
     pk_column: String,
     pk_value: String,
     data: HashMap<String, Option<String>>,
 ) -> Result<u64, String> {
-    let mut backend = connect_database(&project_id)?;
-    backend.update_row(&table_name, &pk_column, &pk_value, data)
+    with_db_backend(&state, &project_id, |backend| {
+        backend.update_row(&table_name, &pk_column, &pk_value, data)
+    })
 }
 
 #[command(rename_all = "camelCase")]
 pub fn get_db_connection_type(project_id: String) -> Result<String, String> {
+    // Implementation remains mostly same, just reading config
+    // ... Copy existing implementation ...
     // Get project location
     let db_path = get_db_path()?;
     let db = Database::new(db_path)

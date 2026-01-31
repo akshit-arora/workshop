@@ -1,7 +1,12 @@
+use crate::db_factory::DbBackend;
 use portable_pty::MasterPty;
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::{mpsc::Sender, Mutex};
+
+pub struct DbConnectionManager {
+    pub connections: Mutex<HashMap<String, Box<dyn DbBackend + Send>>>,
+}
 
 pub struct TerminalSession {
     pub writer: Box<dyn Write + Send>,
