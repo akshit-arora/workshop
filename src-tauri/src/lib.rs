@@ -13,6 +13,7 @@ fn open_in_editor(command: String, path: String) -> Result<(), String> {
 }
 
 mod terminal;
+mod project;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -28,6 +29,9 @@ pub fn run() {
             terminal::create_terminal,
             terminal::write_to_terminal,
             terminal::resize_terminal,
+            project::get_project_info,
+            project::detect_and_save_project_info,
+            project::remove_project_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

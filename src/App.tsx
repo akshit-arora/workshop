@@ -24,14 +24,21 @@ export interface TextEditor {
   command: string;
 }
 
-const Dashboard = ({ name, activeProject, openProjectFolder, setView, dbError, defaultEditor, openInEditor }: {
+interface ProjectInfo {
+  project_type: string;
+  detected_at: number;
+}
+
+const Dashboard = ({ name, activeProject, openProjectFolder, setView, dbError, defaultEditor, openInEditor, projectInfo, onRemoveInfo }: {
   name: string,
   activeProject: Project | null,
   openProjectFolder: (path: string) => Promise<void>,
   setView: (view: string) => void,
   dbError: string | null,
   defaultEditor: TextEditor | null,
-  openInEditor: (command: string, path: string) => Promise<void>
+  openInEditor: (command: string, path: string) => Promise<void>,
+  projectInfo: ProjectInfo | null,
+  onRemoveInfo: () => Promise<void>
 }) => (
   <div className="max-w-4xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
     {dbError && (
@@ -82,6 +89,20 @@ const Dashboard = ({ name, activeProject, openProjectFolder, setView, dbError, d
         </div>
       )}
     </div>
+
+    {activeProject && projectInfo && (
+      <div className="mt-8 p-6 bg-base-200 rounded-2xl border border-base-300 shadow-sm animate-in fade-in duration-700">
+        <div className="flex justify-between items-start">
+          <div>
+            <h3 className="text-sm uppercase tracking-widest font-bold opacity-50 mb-2">Project Information</h3>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl font-bold">{projectInfo.project_type} Project</span>
+            </div>
+          </div>
+          <button className="btn btn-ghost btn-xs text-error" onClick={onRemoveInfo}>Remove Information</button>
+        </div>
+      </div>
+    )}
 
     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12">
       <div className="card bg-base-200 shadow-xl border border-base-300 hover:scale-[1.02] transition-all duration-300 cursor-default">
@@ -458,6 +479,40 @@ function App() {
   const [projectsRootPath, setProjectsRootPath] = useState("");
   const [editors, setEditors] = useState<TextEditor[]>([]);
   const [defaultEditorId, setDefaultEditorId] = useState<string | null>(null);
+  const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null);
+
+  useEffect(() => {
+    async function loadProjectInfo() {
+      if (activeProject) {
+        try {
+          const info = await invoke<ProjectInfo | null>("get_project_info", { path: activeProject.path });
+          if (info) {
+            setProjectInfo(info);
+          } else {
+            // Auto detect once if not present
+            const detected = await invoke<ProjectInfo>("detect_and_save_project_info", { path: activeProject.path });
+            setProjectInfo(detected);
+          }
+        } catch (e) {
+          console.error("Failed to load project info", e);
+        }
+      } else {
+        setProjectInfo(null);
+      }
+    }
+    loadProjectInfo();
+  }, [activeProject]);
+
+  const removeInfo = async () => {
+    if (activeProject) {
+      try {
+        await invoke("remove_project_info", { path: activeProject.path });
+        setProjectInfo(null);
+      } catch (e) {
+        console.error("Failed to remove project info", e);
+      }
+    }
+  };
 
   const openInEditor = async (command: string, path: string) => {
     try {
@@ -785,7 +840,7 @@ function App() {
               </li>
               <li>
                 <a className={view === 'projects' ? 'active' : ''} onClick={() => setView('projects')}>
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
                   Projects
                 </a>
               </li>
@@ -810,7 +865,7 @@ function App() {
 
         <main className="flex-1 overflow-y-auto relative bg-base-100 p-8">
           <div className={`${view === 'dashboard' ? 'block' : 'hidden'}`}>
-            <Dashboard name={name} activeProject={activeProject} openProjectFolder={openProjectFolder} setView={setView} dbError={dbError} defaultEditor={editors.find(e => e.id === defaultEditorId) || null} openInEditor={openInEditor} />
+            <Dashboard name={name} activeProject={activeProject} openProjectFolder={openProjectFolder} setView={setView} dbError={dbError} defaultEditor={editors.find(e => e.id === defaultEditorId) || null} openInEditor={openInEditor} projectInfo={projectInfo} onRemoveInfo={removeInfo} />
           </div>
           <div className={`${view === 'projects' ? 'block' : 'hidden'}`}>
             <Projects projects={projects} activeProject={activeProject} createProject={createProject} switchProject={switchProject} openProjectFolder={openProjectFolder} deleteProject={deleteProject} projectsRootPath={projectsRootPath} saveProjectsRoot={saveProjectsRoot} syncAutoDiscoveredProjects={syncAutoDiscoveredProjects} db={db} />
@@ -832,7 +887,9 @@ function App() {
 
       <footer className="footer px-4 py-1 bg-primary text-primary-content h-7 shrink-0 text-[10px] font-bold tracking-widest flex justify-between items-center z-30 shadow-inner">
         <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1 opacity-90"><div className="w-2 h-2 rounded-full bg-success"></div> connected</span>
+          {projectInfo && (
+            <span className="opacity-90 uppercase">{projectInfo.project_type}</span>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <span>{name ? `USER: ${name.toUpperCase()}` : 'GUEST'}</span>
