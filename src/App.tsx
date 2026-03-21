@@ -5,6 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { readDir } from "@tauri-apps/plugin-fs";
 import { Terminal } from "./components/Terminal";
+import { DatabaseViewer } from "./components/DatabaseViewer";
 import "./App.css";
 
 const DAISY_THEMES = [
@@ -40,14 +41,14 @@ const Dashboard = ({ name, activeProject, openProjectFolder, setView, dbError, d
   projectInfo: ProjectInfo | null,
   onRemoveInfo: () => Promise<void>
 }) => (
-  <div className="max-w-4xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
+  <div className="max-w-4xl mx-auto animate-in slide-in-from-bottom-4 duration-500 text-base-content">
     {dbError && (
-      <div className="alert alert-error mb-6 shadow-lg">
+      <div className="alert alert-error mb-6 shadow-lg text-white">
         <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
         <span>Database Error: {dbError}</span>
       </div>
     )}
-    <div className="flex flex-col md:flex-row gap-8">
+    <div className="flex flex-col md:flex-row gap-8 text-base-content">
       <div className="flex-1">
         <h1 className="text-4xl font-extrabold tracking-tight">
           Hey {name || "there"}, good to see you! 👋
@@ -61,7 +62,7 @@ const Dashboard = ({ name, activeProject, openProjectFolder, setView, dbError, d
       </div>
       {activeProject && (
         <div className="card bg-primary text-primary-content shadow-xl md:w-80">
-          <div className="card-body p-6">
+          <div className="card-body p-6 text-primary-content">
             <h2 className="card-title text-lg font-bold truncate">{activeProject.name}</h2>
             <p className="text-xs opacity-80 font-mono truncate">{activeProject.path}</p>
             {activeProject.description && (
@@ -96,7 +97,7 @@ const Dashboard = ({ name, activeProject, openProjectFolder, setView, dbError, d
           <div>
             <h3 className="text-sm uppercase tracking-widest font-bold opacity-50 mb-2">Project Information</h3>
             <div className="flex items-center gap-2">
-              <span className="text-2xl font-bold">{projectInfo.project_type} Project</span>
+              <span className="text-2xl font-bold text-base-content">{projectInfo.project_type} Project</span>
             </div>
           </div>
           <button className="btn btn-ghost btn-xs text-error" onClick={onRemoveInfo}>Remove Information</button>
@@ -104,7 +105,7 @@ const Dashboard = ({ name, activeProject, openProjectFolder, setView, dbError, d
       </div>
     )}
 
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12 text-base-content">
       <div className="card bg-base-200 shadow-xl border border-base-300 hover:scale-[1.02] transition-all duration-300 cursor-default">
         <div className="card-body">
           <h2 className="card-title text-xl">Dynamic Layouts</h2>
@@ -117,7 +118,7 @@ const Dashboard = ({ name, activeProject, openProjectFolder, setView, dbError, d
 
       <div className="card bg-base-200 shadow-xl border border-base-300 hover:scale-[1.02] transition-all duration-300 cursor-default">
         <div className="card-body">
-          <h2 className="card-title text-xl">Theming Built-in</h2>
+          <h2 className="card-title text-xl text-base-content">Theming Built-in</h2>
           <p className="opacity-70">Included is a theme controller in the header. Try toggling between light and dark modes.</p>
           <div className="card-actions justify-end mt-4">
             <button className="btn btn-secondary btn-sm" onClick={() => setView("settings")}>Change Theme</button>
@@ -179,8 +180,8 @@ const Projects = ({ projects, activeProject, createProject, switchProject, openP
   return (
     <div className="max-w-4xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-3xl font-bold">Projects</h1>
-        <div className="flex gap-2">
+        <h1 className="text-3xl font-bold text-base-content">Projects</h1>
+        <div className="flex gap-2 text-base-content">
           <button className="btn btn-outline btn-sm" onClick={handlePickRoot}>
             {projectsRootPath ? "Change Root" : "Auto Discover Projects"}
           </button>
@@ -191,7 +192,7 @@ const Projects = ({ projects, activeProject, createProject, switchProject, openP
       </div>
 
       {projectsRootPath && (
-        <div className="alert alert-info mb-8 text-sm py-2">
+        <div className="alert alert-info mb-8 text-sm py-2 text-white">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current shrink-0 w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
           <span>Auto-syncing projects from: <span className="font-mono">{projectsRootPath}</span>. All subfolders are automatically added.</span>
         </div>
@@ -201,13 +202,13 @@ const Projects = ({ projects, activeProject, createProject, switchProject, openP
         {projects.length === 0 ? (
           <div className="col-span-full py-20 text-center bg-base-200 rounded-2xl border-2 border-dashed border-base-300">
             <div className="text-5xl mb-4">📂</div>
-            <h3 className="text-xl font-bold">No projects yet</h3>
-            <p className="opacity-60">Create your first project or select a root folder to auto-discover</p>
+            <h3 className="text-xl font-bold text-base-content">No projects yet</h3>
+            <p className="opacity-60 text-base-content">Create your first project or select a root folder to auto-discover</p>
           </div>
         ) : (
           projects.map(p => (
             <div key={p.id} className={`card bg-base-200 shadow-md border-2 transition-all ${activeProject?.id === p.id ? 'border-primary' : 'border-transparent hover:border-base-300'}`}>
-              <div className="card-body p-6 flex flex-col h-full">
+              <div className="card-body p-6 flex flex-col h-full text-base-content">
                 <div className="flex justify-between items-start mb-2">
                   <h2 className="card-title truncate flex-1">{p.name}</h2>
                   {activeProject?.id === p.id && <div className="badge badge-primary badge-sm shrink-0">Active</div>}
@@ -230,7 +231,7 @@ const Projects = ({ projects, activeProject, createProject, switchProject, openP
       </div>
 
       <dialog id="new_project_modal" className="modal modal-bottom sm:modal-middle">
-        <div className="modal-box">
+        <div className="modal-box text-base-content">
           <h3 className="font-bold text-lg mb-6">Create New Project</h3>
           <div className="space-y-4">
             <div className="form-control w-full">
@@ -253,7 +254,7 @@ const Projects = ({ projects, activeProject, createProject, switchProject, openP
           </div>
           <div className="modal-action">
             <form method="dialog">
-              <button className="btn btn-ghost mr-2">Cancel</button>
+              <button className="btn btn-ghost mr-2 text-base-content">Cancel</button>
               <button className="btn btn-primary" disabled={!projPath || !projName} onClick={() => {
                 createProject(projName, projPath, projDesc);
                 setProjName(""); setProjPath(""); setProjDesc("");
@@ -264,7 +265,7 @@ const Projects = ({ projects, activeProject, createProject, switchProject, openP
       </dialog>
 
       <dialog id="delete_confirm_modal" className="modal modal-bottom sm:modal-middle">
-        <div className="modal-box border-t-4 border-error shadow-2xl">
+        <div className="modal-box border-t-4 border-error shadow-2xl text-base-content">
           <div className="flex items-center gap-4 mb-4">
             <div className="bg-error/10 p-3 rounded-full">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -298,7 +299,7 @@ const Projects = ({ projects, activeProject, createProject, switchProject, openP
             </form>
           </div>
         </div>
-        <form method="dialog" className="modal-backdrop">
+        <form method="dialog" className="modal-backdrop text-base-content">
           <button onClick={() => setProjectToDelete(null)}>close</button>
         </form>
       </dialog>
@@ -306,19 +307,21 @@ const Projects = ({ projects, activeProject, createProject, switchProject, openP
   );
 };
 
-const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DAISY_THEMES, saveSettings, editors, setEditors, defaultEditorId, setDefaultEditorId, db }: {
+const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DAISY_THEMES, saveSettings, editors, setEditors, defaultEditorId, setDefaultEditorId, db, dbKeepAlive, setDbKeepAlive }: {
   tempName: string,
   setTempName: (val: string) => void,
   tempTheme: string,
   setTempTheme: (val: string) => void,
   setTheme: (val: string) => void,
   DAISY_THEMES: string[],
-  saveSettings: (name: string, theme: string) => Promise<void>,
+  saveSettings: (name: string, theme: string, dbKeepAlive: number) => Promise<void>,
   editors: TextEditor[],
   setEditors: (editors: TextEditor[]) => void,
   defaultEditorId: string | null,
   setDefaultEditorId: (id: string | null) => void,
-  db: Database | null
+  db: Database | null,
+  dbKeepAlive: number,
+  setDbKeepAlive: (val: number) => void
 }) => {
   const [newEditorName, setNewEditorName] = useState("");
   const [newEditorCmd, setNewEditorCmd] = useState("");
@@ -364,7 +367,7 @@ const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DA
   };
 
   return (
-    <div className="max-w-2xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
+    <div className="max-w-2xl mx-auto animate-in slide-in-from-bottom-4 duration-500 text-base-content">
       <h1 className="text-3xl font-bold mb-8">Settings</h1>
 
       <div className="space-y-8">
@@ -402,6 +405,30 @@ const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DA
                   {t}
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="card bg-base-200 border border-base-300 shadow-sm">
+          <div className="card-body">
+            <h2 className="card-title mb-2 text-primary">Database Settings</h2>
+            <div className="form-control w-full">
+              <label className="label">
+                <span className="label-text">Database Keep-alive time limit (minutes)</span>
+                <span className="label-text-alt opacity-60">Default: 10m</span>
+              </label>
+              <div className="flex items-center gap-4">
+                <input
+                  type="range"
+                  min="1"
+                  max="60"
+                  value={dbKeepAlive}
+                  onChange={(e) => setDbKeepAlive(parseInt(e.target.value))}
+                  className="range range-primary range-xs flex-1"
+                />
+                <span className="badge badge-primary font-mono w-16 h-8 text-lg">{dbKeepAlive}m</span>
+              </div>
+              <p className="text-[10px] opacity-50 mt-2 italic">Database sessions and loaded data will be kept alive for this duration since last activity.</p>
             </div>
           </div>
         </div>
@@ -453,7 +480,7 @@ const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DA
         <div className="flex justify-end pt-4">
           <button
             className="btn btn-primary px-10"
-            onClick={() => saveSettings(tempName, tempTheme)}
+            onClick={() => saveSettings(tempName, tempTheme, dbKeepAlive)}
           >
             Save Changes
           </button>
@@ -471,7 +498,7 @@ function App() {
   const [tempTheme, setTempTheme] = useState("");
   const [showFTUE, setShowFTUE] = useState(false);
   const [ftueStep, setFtueStep] = useState(1);
-  const [view, setView] = useState("dashboard"); // "dashboard", "settings", "projects"
+  const [view, setView] = useState("dashboard"); // "dashboard", "settings", "projects", "database", "terminal"
   const [db, setDb] = useState<Database | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -480,6 +507,7 @@ function App() {
   const [editors, setEditors] = useState<TextEditor[]>([]);
   const [defaultEditorId, setDefaultEditorId] = useState<string | null>(null);
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null);
+  const [dbKeepAlive, setDbKeepAlive] = useState(10);
 
   useEffect(() => {
     async function loadProjectInfo() {
@@ -608,6 +636,9 @@ function App() {
           if (settingsMap.default_editor_id) {
             setDefaultEditorId(settingsMap.default_editor_id);
           }
+          if (settingsMap.db_keep_alive) {
+            setDbKeepAlive(parseInt(settingsMap.db_keep_alive));
+          }
 
           // Load projects (again after sync)
           const projectList = await _db.select<Project[]>("SELECT * FROM projects");
@@ -635,14 +666,30 @@ function App() {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
-  const saveSettings = async (newName: string, newTheme: string) => {
+  // Periodic cleanup of expired DB sessions
+  useEffect(() => {
+    const cleanup = async () => {
+      try {
+        await invoke("cleanup_expired_sessions", { keepAliveMinutes: dbKeepAlive });
+      } catch (e) {
+        console.error("Failed to cleanup sessions", e);
+      }
+    };
+    
+    const interval = setInterval(cleanup, 60000); // Check every minute
+    return () => clearInterval(interval);
+  }, [dbKeepAlive]);
+
+  const saveSettings = async (newName: string, newTheme: string, newDbKeepAlive: number) => {
     if (!db) return;
 
     await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('name', $1)", [newName]);
     await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('theme', $1)", [newTheme]);
+    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('db_keep_alive', $1)", [newDbKeepAlive.toString()]);
 
     setName(newName);
     setTheme(newTheme);
+    setDbKeepAlive(newDbKeepAlive);
   };
 
   const saveProjectsRoot = async (path: string) => {
@@ -653,7 +700,7 @@ function App() {
   };
 
   const handleFinishFTUE = async () => {
-    await saveSettings(tempName, tempTheme);
+    await saveSettings(tempName, tempTheme, dbKeepAlive);
     setShowFTUE(false);
   };
 
@@ -703,7 +750,7 @@ function App() {
               <div className="space-y-6 text-center py-4">
                 <div className="text-5xl mb-4">🚀</div>
                 <h2 className="card-title text-3xl font-bold justify-center">Welcome!</h2>
-                <p className="text-lg opacity-80">Thanks for installing Workshop. Your own development tool.</p>
+                <p className="text-lg opacity-80 text-base-content">Thanks for installing Workshop. Your own development tool.</p>
                 <div className="card-actions justify-center pt-4">
                   <button className="btn btn-primary px-8" onClick={() => setFtueStep(2)}>Get Started</button>
                 </div>
@@ -712,18 +759,18 @@ function App() {
 
             {ftueStep === 2 && (
               <div className="space-y-6 py-4">
-                <h2 className="card-title text-2xl font-bold">What should we call you?</h2>
+                <h2 className="card-title text-2xl font-bold text-base-content">What should we call you?</h2>
                 <div className="form-control w-full">
                   <input
                     type="text"
                     placeholder="Enter your name"
-                    className="input input-bordered input-lg w-full focus:input-primary transition-all"
+                    className="input input-bordered input-lg w-full focus:input-primary transition-all text-base-content"
                     value={tempName}
                     onChange={(e) => setTempName(e.target.value)}
                     autoFocus
                   />
                 </div>
-                <div className="card-actions justify-end pt-4">
+                <div className="card-actions justify-end pt-4 text-base-content">
                   <button className="btn btn-ghost" onClick={() => setFtueStep(1)}>Back</button>
                   <button
                     className="btn btn-primary px-8"
@@ -738,13 +785,13 @@ function App() {
 
             {ftueStep === 3 && (
               <div className="space-y-6 py-4">
-                <h2 className="card-title text-2xl font-bold">Choose your vibe</h2>
-                <p className="text-sm opacity-60 m-0">You can always change your theme later in the settings.</p>
+                <h2 className="card-title text-2xl font-bold text-base-content">Choose your vibe</h2>
+                <p className="text-sm opacity-60 m-0 text-base-content">You can always change your theme later in the settings.</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-64 overflow-y-auto p-1 bg-base-200 rounded-lg">
                   {DAISY_THEMES.map((t) => (
                     <button
                       key={t}
-                      className={`btn btn-sm capitalize ${tempTheme === t ? 'btn-primary' : 'btn-ghost'}`}
+                      className={`btn btn-sm capitalize ${tempTheme === t ? 'btn-primary' : 'btn-ghost text-base-content'}`}
                       onClick={() => {
                         setTempTheme(t);
                         setTheme(t); // Real-time preview
@@ -755,7 +802,7 @@ function App() {
                   ))}
                 </div>
                 <div className="card-actions justify-end pt-4">
-                  <button className="btn btn-ghost" onClick={() => setFtueStep(2)}>Back</button>
+                  <button className="btn btn-ghost text-base-content" onClick={() => setFtueStep(2)}>Back</button>
                   <button className="btn btn-primary px-8" onClick={() => setFtueStep(4)}>Next</button>
                 </div>
               </div>
@@ -764,8 +811,8 @@ function App() {
             {ftueStep === 4 && (
               <div className="space-y-6 text-center py-4">
                 <div className="text-5xl mb-4">✨</div>
-                <h2 className="card-title text-3xl font-bold justify-center">You're all set!</h2>
-                <p className="text-lg opacity-80">Workshop is ready for you. Let's build something awesome.</p>
+                <h2 className="card-title text-3xl font-bold justify-center text-base-content">You're all set!</h2>
+                <p className="text-lg opacity-80 text-base-content">Workshop is ready for you. Let's build something awesome.</p>
                 <div className="card-actions justify-center pt-4">
                   <button className="btn btn-primary px-8" onClick={handleFinishFTUE}>Continue using the app</button>
                 </div>
@@ -783,7 +830,7 @@ function App() {
 
       {/* Header */}
       <header className="navbar bg-base-300 min-h-12 h-12 shadow-md shrink-0 z-30 px-4">
-        <div className="flex-none">
+        <div className="flex-none text-base-content">
           <button
             className="btn btn-square btn-ghost btn-sm hover:bg-base-200"
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -798,13 +845,13 @@ function App() {
             </svg>
           </button>
         </div>
-        <div className="flex-1 px-2 mx-2 flex items-center gap-4">
+        <div className="flex-1 px-2 mx-2 flex items-center gap-4 text-base-content">
           <span className="text-lg font-bold tracking-tight">Workshop</span>
           <div className="h-6 w-[1px] bg-base-content/10 mx-2"></div>
           {projects.length > 0 && (
             <div className="flex items-center gap-2">
               <select
-                className="select select-bordered select-xs h-8 bg-base-100/50"
+                className="select select-bordered select-xs h-8 bg-base-100/50 text-base-content"
                 value={activeProject?.id || ""}
                 onChange={(e) => {
                   const id = parseInt(e.target.value);
@@ -829,7 +876,7 @@ function App() {
             ${isSidebarOpen ? 'w-64 opacity-100' : 'w-0 opacity-0'}
           `}
         >
-          <div className="w-64">
+          <div className="w-64 h-full">
             <ul className="menu p-4 w-64 h-full text-base-content font-medium">
               <li className="menu-title text-opacity-40 uppercase text-[10px] font-bold tracking-widest mb-2">Workspace</li>
               <li>
@@ -845,12 +892,20 @@ function App() {
                 </a>
               </li>
               {activeProject && (
-                <li>
-                  <a className={view === 'terminal' ? 'active' : 'flex items-center gap-2'} onClick={() => setView('terminal')}>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                    Terminal
-                  </a>
-                </li>
+                <>
+                  <li>
+                    <a className={view === 'database' ? 'active' : ''} onClick={() => setView('database')}>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
+                      Database
+                    </a>
+                  </li>
+                  <li>
+                    <a className={view === 'terminal' ? 'active' : 'flex items-center gap-2'} onClick={() => setView('terminal')}>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                      Terminal
+                    </a>
+                  </li>
+                </>
               )}
               <li className="menu-title text-opacity-40 uppercase text-[10px] font-bold tracking-widest mb-2 mt-4">System</li>
               <li>
@@ -863,7 +918,7 @@ function App() {
           </div>
         </aside>
 
-        <main className="flex-1 overflow-y-auto relative bg-base-100 p-8">
+        <main className="flex-1 overflow-y-auto relative bg-base-100 p-8 text-base-content">
           <div className={`${view === 'dashboard' ? 'block' : 'hidden'}`}>
             <Dashboard name={name} activeProject={activeProject} openProjectFolder={openProjectFolder} setView={setView} dbError={dbError} defaultEditor={editors.find(e => e.id === defaultEditorId) || null} openInEditor={openInEditor} projectInfo={projectInfo} onRemoveInfo={removeInfo} />
           </div>
@@ -871,8 +926,13 @@ function App() {
             <Projects projects={projects} activeProject={activeProject} createProject={createProject} switchProject={switchProject} openProjectFolder={openProjectFolder} deleteProject={deleteProject} projectsRootPath={projectsRootPath} saveProjectsRoot={saveProjectsRoot} syncAutoDiscoveredProjects={syncAutoDiscoveredProjects} db={db} />
           </div>
           <div className={`${view === 'settings' ? 'block' : 'hidden'}`}>
-            <Settings tempName={tempName} setTempName={setTempName} tempTheme={tempTheme} setTempTheme={setTempTheme} setTheme={setTheme} DAISY_THEMES={DAISY_THEMES} saveSettings={saveSettings} editors={editors} setEditors={setEditors} defaultEditorId={defaultEditorId} setDefaultEditorId={setDefaultEditorId} db={db} />
+            <Settings tempName={tempName} setTempName={setTempName} tempTheme={tempTheme} setTempTheme={setTempTheme} setTheme={setTheme} DAISY_THEMES={DAISY_THEMES} saveSettings={saveSettings} editors={editors} setEditors={setEditors} defaultEditorId={defaultEditorId} setDefaultEditorId={setDefaultEditorId} db={db} dbKeepAlive={dbKeepAlive} setDbKeepAlive={setDbKeepAlive} />
           </div>
+          {activeProject && (
+            <div className={`h-full ${view === 'database' ? 'block' : 'hidden'}`}>
+              <DatabaseViewer projectPath={activeProject.path} keepAliveMinutes={dbKeepAlive} />
+            </div>
+          )}
           {activeProject && (
             <div className={`absolute inset-0 ${view === 'terminal' ? 'block' : 'hidden'}`}>
               <Terminal activeProject={activeProject} />
@@ -886,9 +946,10 @@ function App() {
       </div>
 
       <footer className="footer px-4 py-1 bg-primary text-primary-content h-7 shrink-0 text-[10px] font-bold tracking-widest flex justify-between items-center z-30 shadow-inner">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 text-primary-content">
+          <span className="flex items-center gap-1 opacity-90"><div className="w-2 h-2 rounded-full bg-success"></div> connected</span>
           {projectInfo && (
-            <span className="opacity-90 uppercase">{projectInfo.project_type}</span>
+            <span className="opacity-90 uppercase border-l border-white/20 pl-4">{projectInfo.project_type}</span>
           )}
         </div>
         <div className="flex items-center gap-3">

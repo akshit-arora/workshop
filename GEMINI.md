@@ -23,6 +23,8 @@ Workshop is a developer-focused tool built using **Tauri**, **React**, and **Typ
 
 ## Building and Running
 
+Alway check if the project is successfully compiling by running `cd src-tauri && cargo check`
+
 ### Prerequisites
 - Node.js and npm
 - Rust toolchain
