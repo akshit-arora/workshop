@@ -15,6 +15,7 @@ fn open_in_editor(command: String, path: String) -> Result<(), String> {
 mod terminal;
 mod project;
 mod db_viewer;
+mod logs;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -44,6 +45,8 @@ pub fn run() {
             db_viewer::get_table_count,
             db_viewer::cleanup_expired_sessions,
             db_viewer::execute_raw_sql,
+            logs::list_laravel_logs,
+            logs::read_laravel_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
