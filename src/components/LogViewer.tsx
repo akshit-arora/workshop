@@ -21,6 +21,7 @@ interface LogEntry {
 export const LogViewer = ({ projectPath }: { projectPath: string }) => {
     const [logFiles, setLogFiles] = useState<LogFile[]>([]);
     const [selectedLog, setSelectedLog] = useState<LogFile | null>(null);
+    const [selectedLevel, setSelectedLevel] = useState<string>("ALL");
     const [entries, setEntries] = useState<LogEntry[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -31,6 +32,7 @@ export const LogViewer = ({ projectPath }: { projectPath: string }) => {
         setSelectedLog(null);
         setEntries([]);
         setError(null);
+        setSelectedLevel("ALL");
         fetchLogFiles();
     }, [projectPath]);
 
@@ -127,7 +129,13 @@ export const LogViewer = ({ projectPath }: { projectPath: string }) => {
         }
     };
 
-    const groupedEntries = entries.reduce((groups, entry) => {
+    const levels = ["ALL", ...new Set(entries.map(e => e.level.toUpperCase()))].sort();
+
+    const filteredEntries = selectedLevel === "ALL" 
+        ? entries 
+        : entries.filter(e => e.level.toUpperCase() === selectedLevel);
+
+    const groupedEntries = filteredEntries.reduce((groups, entry) => {
         const date = entry.date;
         if (!groups[date]) {
             groups[date] = [];
@@ -178,6 +186,19 @@ export const LogViewer = ({ projectPath }: { projectPath: string }) => {
                 </div>
 
                 <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold opacity-40 uppercase">Filter:</span>
+                        <select 
+                            className="select select-bordered select-xs bg-base-100 min-w-[100px]"
+                            value={selectedLevel}
+                            onChange={(e) => setSelectedLevel(e.target.value)}
+                        >
+                            {levels.map(level => (
+                                <option key={level} value={level}>{level}</option>
+                            ))}
+                        </select>
+                    </div>
+
                     <div className="flex items-center gap-2">
                         <span className="text-xs font-bold opacity-40 uppercase">Lines:</span>
                         <select 
