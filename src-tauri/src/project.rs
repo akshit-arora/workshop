@@ -46,6 +46,16 @@ pub fn get_artisan_commands(path: String) -> Result<Vec<ArtisanCommand>, String>
     Ok(list.commands)
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DbConfig {
+    pub connection: String,
+    pub host: Option<String>,
+    pub port: Option<String>,
+    pub database: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct ProjectInfo {
     #[serde(default)]
@@ -54,9 +64,31 @@ pub struct ProjectInfo {
     pub detected_at: u64,
     #[serde(default)]
     pub saved_queries: Vec<SavedQuery>,
+    #[serde(default)]
+    pub db_config: Option<DbConfig>,
 }
 
 const INFO_FILE: &str = ".workshop.json";
+
+#[tauri::command]
+pub fn save_custom_db_config(path: String, config: Option<DbConfig>) -> Result<(), String> {
+    let project_path = Path::new(&path);
+    let info_path = project_path.join(INFO_FILE);
+    
+    let mut info = if info_path.exists() {
+        let content = fs::read_to_string(&info_path).map_err(|e| e.to_string())?;
+        serde_json::from_str::<ProjectInfo>(&content).unwrap_or_default()
+    } else {
+        ProjectInfo::default()
+    };
+
+    info.db_config = config;
+
+    let content = serde_json::to_string_pretty(&info).map_err(|e| e.to_string())?;
+    fs::write(info_path, content).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
 
 #[tauri::command]
 pub fn get_saved_queries(path: String) -> Result<Vec<SavedQuery>, String> {
@@ -128,6 +160,7 @@ pub fn detect_and_save_project_info(path: String) -> Result<ProjectInfo, String>
             .unwrap()
             .as_secs(),
         saved_queries: Vec::new(),
+        db_config: None,
     };
 
     let info_path = project_path.join(INFO_FILE);

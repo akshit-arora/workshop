@@ -7,15 +7,7 @@ use std::time::{Duration, Instant};
 use sqlx::{Row, Column, MySqlPool, SqlitePool, mysql::MySqlPoolOptions, sqlite::SqlitePoolOptions};
 use tauri::State;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct DbConfig {
-    pub connection: String,
-    pub host: Option<String>,
-    pub port: Option<String>,
-    pub database: String,
-    pub username: Option<String>,
-    pub password: Option<String>,
-}
+use crate::project::DbConfig;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QueryResult {
@@ -75,6 +67,11 @@ fn parse_env_file(path: &Path) -> HashMap<String, String> {
 }
 
 #[tauri::command]
+pub async fn test_db_connection(config: DbConfig, project_path: String) -> Result<(), String> {
+    create_pool(&config, &project_path).await.map(|_| ())
+}
+
+#[tauri::command]
 pub async fn get_laravel_db_config(project_path: String) -> Result<DbConfig, String> {
     let env_path = Path::new(&project_path).join(".env");
     if !env_path.exists() {
@@ -84,7 +81,15 @@ pub async fn get_laravel_db_config(project_path: String) -> Result<DbConfig, Str
     let env = parse_env_file(&env_path);
     
     let connection = env.get("DB_CONNECTION").cloned().unwrap_or_else(|| "mysql".to_string());
-    let database = env.get("DB_DATABASE").cloned().ok_or_else(|| "DB_DATABASE not defined in .env".to_string())?;
+    
+    // Default database for Laravel SQLite is often 'database/database.sqlite' if not specified
+    let database = if let Some(db) = env.get("DB_DATABASE") {
+        db.clone()
+    } else if connection == "sqlite" {
+        "database/database.sqlite".to_string()
+    } else {
+        return Err("DB_DATABASE not defined in .env".to_string());
+    };
 
     Ok(DbConfig {
         connection,
@@ -99,17 +104,40 @@ pub async fn get_laravel_db_config(project_path: String) -> Result<DbConfig, Str
 async fn create_pool(config: &DbConfig, project_path: &str) -> Result<DbPool, String> {
     match config.connection.as_str() {
         "sqlite" => {
+            if config.database == ":memory:" {
+                let pool = SqlitePoolOptions::new()
+                    .max_connections(1) // only 1 for memory
+                    .connect("sqlite::memory:")
+                    .await
+                    .map_err(|e| format!("Failed to connect to SQLite memory: {}", e))?;
+                return Ok(DbPool::Sqlite(pool));
+            }
+
             let db_path = if Path::new(&config.database).is_absolute() {
-                config.database.clone()
+                Path::new(&config.database).to_path_buf()
             } else {
-                Path::new(project_path).join(&config.database).to_string_lossy().to_string()
+                // Try several common Laravel locations for sqlite
+                let p1 = Path::new(project_path).join(&config.database);
+                let p2 = Path::new(project_path).join("database").join(&config.database);
+                let p3 = Path::new(project_path).join("database").join("database.sqlite");
+                
+                if p1.exists() { p1 }
+                else if p2.exists() { p2 }
+                else if p3.exists() { p3 }
+                else { p1 } // Default to p1 if none exist (it will fail later with clear error)
             };
-            let url = format!("sqlite://{}", db_path);
+
+            if !db_path.exists() {
+                return Err(format!("SQLite database not found. Tried: {}, {}", 
+                    Path::new(project_path).join(&config.database).display(),
+                    Path::new(project_path).join("database").join(&config.database).display()));
+            }
+
             let pool = SqlitePoolOptions::new()
                 .max_connections(5)
-                .connect(&url)
+                .connect(&format!("sqlite:{}", db_path.to_string_lossy()))
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| format!("Failed to connect to SQLite: {}", e))?;
             Ok(DbPool::Sqlite(pool))
         }
         "mysql" => {

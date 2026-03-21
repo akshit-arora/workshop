@@ -28,8 +28,122 @@ interface SavedQuery {
   sql: string;
 }
 
+interface ProjectInfo {
+  project_type: string;
+  db_config?: DbConfig;
+}
+
+const ManualConnectionForm = ({ projectPath, onConnected }: { projectPath: string, onConnected: (cfg: DbConfig) => void }) => {
+  const [connection, setConnection] = useState("mysql");
+  const [host, setHost] = useState("127.0.0.1");
+  const [port, setPort] = useState("3306");
+  const [database, setDatabase] = useState("");
+  const [username, setUsername] = useState("root");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (connection === "sqlite") {
+      setPort("");
+      setHost("");
+      if (!database) setDatabase("database/database.sqlite");
+    } else {
+      setPort("3306");
+      setHost("127.0.0.1");
+    }
+  }, [connection]);
+
+  const handleConnect = async (save: boolean) => {
+    const cfg: DbConfig = { connection, host, port, database, username, password };
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Test connection first
+      await invoke("test_db_connection", { config: cfg, projectPath });
+      
+      if (save) {
+        await invoke("save_custom_db_config", { path: projectPath, config: cfg });
+      }
+      
+      onConnected(cfg);
+    } catch (e: any) {
+      setError(e.toString());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex-1 flex items-center justify-center p-6 bg-base-100 overflow-auto">
+      <div className="card w-full max-w-lg bg-base-200 shadow-xl border border-base-300">
+        <div className="card-body">
+          <h2 className="card-title text-2xl mb-2">Connect to Database</h2>
+          <p className="text-sm opacity-60 mb-6">Enter your database credentials to connect and explore.</p>
+          
+          {error && (
+            <div className="alert alert-error mb-6 py-2 text-sm text-white">
+              <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-control col-span-2">
+              <label className="label"><span className="label-text font-bold text-xs uppercase opacity-60">Connection Type</span></label>
+              <select className="select select-bordered w-full" value={connection} onChange={e => setConnection(e.target.value)}>
+                <option value="mysql">MySQL</option>
+                <option value="sqlite">SQLite</option>
+              </select>
+            </div>
+
+            {connection === "mysql" && (
+              <>
+                <div className="form-control">
+                  <label className="label"><span className="label-text font-bold text-xs uppercase opacity-60">Host</span></label>
+                  <input type="text" className="input input-bordered w-full" value={host} onChange={e => setHost(e.target.value)} placeholder="127.0.0.1" />
+                </div>
+                <div className="form-control">
+                  <label className="label"><span className="label-text font-bold text-xs uppercase opacity-60">Port</span></label>
+                  <input type="text" className="input input-bordered w-full" value={port} onChange={e => setPort(e.target.value)} placeholder="3306" />
+                </div>
+              </>
+            )}
+
+            <div className="form-control col-span-2">
+              <label className="label"><span className="label-text font-bold text-xs uppercase opacity-60">{connection === "sqlite" ? "Database Path" : "Database Name"}</span></label>
+              <input type="text" className="input input-bordered w-full" value={database} onChange={e => setDatabase(e.target.value)} placeholder={connection === "sqlite" ? "database/database.sqlite" : "my_database"} />
+            </div>
+
+            {connection === "mysql" && (
+              <>
+                <div className="form-control">
+                  <label className="label"><span className="label-text font-bold text-xs uppercase opacity-60">Username</span></label>
+                  <input type="text" className="input input-bordered w-full" value={username} onChange={e => setUsername(e.target.value)} placeholder="root" />
+                </div>
+                <div className="form-control">
+                  <label className="label"><span className="label-text font-bold text-xs uppercase opacity-60">Password</span></label>
+                  <input type="password" opacity-60 className="input input-bordered w-full" value={password} onChange={e => setPassword(e.target.value)} />
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="card-actions justify-end mt-8 gap-2">
+            <button className={`btn btn-primary flex-1 ${loading ? 'loading' : ''}`} onClick={() => handleConnect(true)} disabled={loading || !database}>
+              Connect & Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const DatabaseViewer = ({ projectPath, keepAliveMinutes }: { projectPath: string, keepAliveMinutes: number }) => {
   const [config, setConfig] = useState<DbConfig | null>(null);
+  const [isManualMode, setIsManualMode] = useState(false);
   const [tables, setTables] = useState<string[]>([]);
   const [filteredTables, setFilteredTables] = useState<string[]>([]);
   const [search, setSearch] = useState("");
@@ -103,6 +217,7 @@ export const DatabaseViewer = ({ projectPath, keepAliveMinutes }: { projectPath:
     if (prevProjectPath.current !== projectPath) {
       // Project changed, reset local state
       setConfig(null);
+      setIsManualMode(false);
       setTables([]);
       setSelectedTable(null);
       setData(null);
@@ -206,13 +321,29 @@ export const DatabaseViewer = ({ projectPath, keepAliveMinutes }: { projectPath:
   };
 
   const fetchConfig = async () => {
+    setLoading(true);
+    setError(null);
     try {
+      // 1. Try Laravel config first
       const cfg = await invoke<DbConfig>("get_laravel_db_config", { projectPath });
       setConfig(cfg);
-      setError(null);
+      setIsManualMode(false);
     } catch (e: any) {
-      setError("Failed to fetch Laravel DB config. Ensure it's a Laravel project with .env");
-      console.error(e);
+      // 2. If not Laravel, check if we have a saved manual config
+      try {
+        const info = await invoke<ProjectInfo | null>("get_project_info", { path: projectPath });
+        if (info && info.db_config) {
+          setConfig(info.db_config);
+          setIsManualMode(false);
+        } else {
+          // No config found anywhere, show manual form
+          setIsManualMode(true);
+        }
+      } catch (err) {
+        setIsManualMode(true);
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -468,8 +599,18 @@ export const DatabaseViewer = ({ projectPath, keepAliveMinutes }: { projectPath:
       onKeyDown={handleKeyDown}
       tabIndex={0}
     >
-      {/* Sidebar - Tables */}
-      <div className="w-64 border-r border-base-300 flex flex-col bg-base-200/50">
+      {isManualMode ? (
+        <ManualConnectionForm 
+          projectPath={projectPath} 
+          onConnected={(cfg) => {
+            setConfig(cfg);
+            setIsManualMode(false);
+          }} 
+        />
+      ) : (
+        <>
+          {/* Sidebar - Tables */}
+          <div className="w-64 border-r border-base-300 flex flex-col bg-base-200/50">
         <div className="p-4 border-b border-base-300 space-y-3">
           <div className="flex justify-between items-center">
             <h3 className="font-bold text-sm uppercase tracking-wider opacity-60">Tables</h3>
@@ -775,7 +916,19 @@ export const DatabaseViewer = ({ projectPath, keepAliveMinutes }: { projectPath:
                 </span>
               </div>
               <div className="flex items-center gap-4 text-[10px] font-bold opacity-40 uppercase">
-                <span>Session: {keepAliveMinutes}m keep-alive</span>
+                <button 
+                  className="btn btn-link btn-xs text-[10px] p-0 h-auto min-h-0 text-error opacity-60 hover:opacity-100"
+                  onClick={async () => {
+                    if (window.confirm("Clear custom database configuration?")) {
+                      await invoke("save_custom_db_config", { path: projectPath, config: null });
+                      setConfig(null);
+                      setIsManualMode(true);
+                    }
+                  }}
+                >
+                  Clear Config
+                </button>
+                <span className="border-l border-base-content/10 pl-4">Session: {keepAliveMinutes}m keep-alive</span>
                 <span className="border-l border-base-content/10 pl-4">{config?.connection} connection</span>
               </div>
             </div>
@@ -983,6 +1136,8 @@ export const DatabaseViewer = ({ projectPath, keepAliveMinutes }: { projectPath:
           <div className="absolute inset-0 -z-10" onClick={() => { if (!saveLoading) { setDetailedRow(null); setIsEditing(false); } }}></div>
         </div>
       )}
-    </div>
+    </>
+  )}
+</div>
   );
 };
