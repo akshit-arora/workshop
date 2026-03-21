@@ -9,6 +9,43 @@ pub struct SavedQuery {
     pub sql: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ArtisanCommand {
+    pub name: String,
+    pub description: String,
+    pub usage: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ArtisanList {
+    pub commands: Vec<ArtisanCommand>,
+}
+
+#[tauri::command]
+pub fn get_artisan_commands(path: String) -> Result<Vec<ArtisanCommand>, String> {
+    let project_path = Path::new(&path);
+    if !project_path.join("artisan").exists() {
+        return Err("Not a Laravel project (artisan not found)".to_string());
+    }
+
+    let output = std::process::Command::new("php")
+        .arg("artisan")
+        .arg("list")
+        .arg("--format=json")
+        .current_dir(project_path)
+        .output()
+        .map_err(|e| format!("Failed to execute php artisan: {}", e))?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+
+    let list: ArtisanList = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("Failed to parse artisan list: {}", e))?;
+
+    Ok(list.commands)
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct ProjectInfo {
     #[serde(default)]

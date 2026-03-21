@@ -37,6 +37,7 @@ pub fn run() {
             project::remove_project_info,
             project::get_saved_queries,
             project::save_query,
+            project::get_artisan_commands,
             db_viewer::get_laravel_db_config,
             db_viewer::list_tables,
             db_viewer::get_table_data,

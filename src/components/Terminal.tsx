@@ -10,12 +10,122 @@ interface TerminalTab {
     name: string;
 }
 
+interface ArtisanCommand {
+    name: string;
+    description: string;
+    usage: string[];
+}
+
+const ArtisanCommandSelector = ({ path, onSelect }: { path: string, onSelect: (cmd: string) => void }) => {
+    const [commands, setCommands] = useState<ArtisanCommand[]>([]);
+    const [search, setSearch] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const fetchCommands = async () => {
+            setLoading(true);
+            try {
+                const cmds = await invoke<ArtisanCommand[]>("get_artisan_commands", { path });
+                setCommands(cmds);
+            } catch (err) {
+                console.error("Failed to fetch artisan commands:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchCommands();
+    }, [path]);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const filteredCommands = commands.filter(cmd => 
+        cmd.name.toLowerCase().includes(search.toLowerCase()) || 
+        cmd.description.toLowerCase().includes(search.toLowerCase())
+    );
+
+    return (
+        <div className="dropdown dropdown-end" ref={dropdownRef}>
+            <div 
+                tabIndex={0} 
+                role="button" 
+                className="btn btn-ghost btn-xs gap-2 border border-base-300"
+                onClick={() => setIsOpen(!isOpen)}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                Artisan
+            </div>
+            {isOpen && (
+                <ul tabIndex={0} className="dropdown-content z-[20] menu p-2 shadow-2xl bg-base-200 rounded-box w-80 max-h-96 overflow-hidden flex-nowrap border border-base-300 mt-1">
+                    <div className="px-2 pb-2 sticky top-0 bg-base-200 z-10">
+                        <input
+                            type="text"
+                            placeholder="Search artisan commands..."
+                            className="input input-bordered input-sm w-full bg-base-100"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            autoFocus
+                        />
+                    </div>
+                    <div className="overflow-y-auto flex-1 custom-scrollbar">
+                        {loading ? (
+                            <li className="p-4 text-center opacity-50 italic">Loading artisan commands...</li>
+                        ) : filteredCommands.length === 0 ? (
+                            <li className="p-4 text-center opacity-50 italic">No commands found</li>
+                        ) : (
+                            filteredCommands.map(cmd => (
+                                <li key={cmd.name}>
+                                    <button 
+                                        className="flex flex-col items-start gap-0 py-2 hover:bg-primary hover:text-primary-content"
+                                        onClick={() => {
+                                            onSelect(`php artisan ${cmd.name}`);
+                                            setIsOpen(false);
+                                            setSearch("");
+                                        }}
+                                    >
+                                        <span className="font-bold font-mono text-xs">{cmd.name}</span>
+                                        <span className="text-[10px] opacity-70 line-clamp-1">{cmd.description}</span>
+                                    </button>
+                                </li>
+                            ))
+                        )}
+                    </div>
+                </ul>
+            )}
+        </div>
+    );
+};
+
 export const Terminal = ({ activeProject }: { activeProject: any }) => {
     const [tabs, setTabs] = useState<TerminalTab[]>([]);
     const [activeTabId, setActiveTabId] = useState<string | null>(null);
+    const [projectInfo, setProjectInfo] = useState<any>(null);
     const terminalRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const xtermInstances = useRef<Record<string, XTerm>>({});
     const fitAddons = useRef<Record<string, FitAddon>>({});
+
+    useEffect(() => {
+        if (activeProject?.path) {
+            invoke("get_project_info", { path: activeProject.path })
+                .then(setProjectInfo)
+                .catch(console.error);
+        }
+    }, [activeProject?.path]);
+
+    const executeCommand = (command: string) => {
+        if (activeTabId && xtermInstances.current[activeTabId]) {
+            invoke("write_to_terminal", { id: activeTabId, data: command + "\n" });
+        }
+    };
 
     const createTab = async () => {
         const id = crypto.randomUUID();
@@ -163,6 +273,23 @@ export const Terminal = ({ activeProject }: { activeProject: any }) => {
                         onClick={createTab}
                     >
                         ＋
+                    </button>
+                </div>
+
+                <div className="flex items-center gap-2 pr-4">
+                    {projectInfo?.project_type === "Laravel" && (
+                        <ArtisanCommandSelector 
+                            path={activeProject.path} 
+                            onSelect={executeCommand}
+                        />
+                    )}
+                    
+                    <button 
+                        className="btn btn-ghost btn-xs gap-2 border border-base-300"
+                        onClick={() => executeCommand("clear")}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        Clear
                     </button>
                 </div>
             </div>
