@@ -76,6 +76,27 @@ export const Terminal = ({ activeProject }: { activeProject: any }) => {
     };
 
     const lastProjectId = useRef<number | null>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const observer = new ResizeObserver(() => {
+            Object.values(fitAddons.current).forEach(fit => {
+                try {
+                    fit.fit();
+                } catch (e) {
+                    // Fit might fail if the terminal is not visible or already disposed
+                }
+            });
+        });
+
+        if (containerRef.current) {
+            observer.observe(containerRef.current);
+        }
+
+        return () => {
+            observer.disconnect();
+        };
+    }, []);
 
     useEffect(() => {
         if (activeProject) {
@@ -92,14 +113,6 @@ export const Terminal = ({ activeProject }: { activeProject: any }) => {
             }
         }
     }, [activeProject?.id]);
-
-    useEffect(() => {
-        const handleResize = () => {
-            Object.values(fitAddons.current).forEach(fit => fit.fit());
-        };
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
 
     const closeTab = (id: string) => {
         setTabs(prev => {
@@ -154,12 +167,12 @@ export const Terminal = ({ activeProject }: { activeProject: any }) => {
                 </div>
             </div>
 
-            <div className="flex-1 relative bg-[#1d232a]">
+            <div className="flex-1 relative bg-[#1d232a]" ref={containerRef}>
                 {tabs.map((tab) => (
                     <div
                         key={tab.id}
                         ref={(el) => (terminalRefs.current[tab.id] = el)}
-                        className={`absolute inset-0 p-2 transition-opacity duration-200 ${activeTabId === tab.id ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}
+                        className={`absolute inset-0 transition-opacity duration-200 ${activeTabId === tab.id ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}
                     />
                 ))}
 
