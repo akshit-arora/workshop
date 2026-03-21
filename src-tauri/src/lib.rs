@@ -14,11 +14,13 @@ fn open_in_editor(command: String, path: String) -> Result<(), String> {
 
 mod terminal;
 mod project;
+mod db_viewer;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(terminal::TerminalState::default())
+        .manage(db_viewer::DbState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
@@ -32,6 +34,16 @@ pub fn run() {
             project::get_project_info,
             project::detect_and_save_project_info,
             project::remove_project_info,
+            project::get_saved_queries,
+            project::save_query,
+            db_viewer::get_laravel_db_config,
+            db_viewer::list_tables,
+            db_viewer::get_table_data,
+            db_viewer::get_table_schema,
+            db_viewer::update_table_row,
+            db_viewer::get_table_count,
+            db_viewer::cleanup_expired_sessions,
+            db_viewer::execute_raw_sql,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

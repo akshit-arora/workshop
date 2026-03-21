@@ -4,12 +4,59 @@ use std::path::Path;
 use std::time::SystemTime;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SavedQuery {
+    pub name: String,
+    pub sql: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct ProjectInfo {
+    #[serde(default)]
     pub project_type: String,
+    #[serde(default)]
     pub detected_at: u64,
+    #[serde(default)]
+    pub saved_queries: Vec<SavedQuery>,
 }
 
 const INFO_FILE: &str = ".workshop.json";
+
+#[tauri::command]
+pub fn get_saved_queries(path: String) -> Result<Vec<SavedQuery>, String> {
+    let info_path = Path::new(&path).join(INFO_FILE);
+    if info_path.exists() {
+        let content = fs::read_to_string(info_path).map_err(|e| e.to_string())?;
+        // Try to parse, if fails return empty list (might be corrupted or old format)
+        match serde_json::from_str::<ProjectInfo>(&content) {
+            Ok(info) => Ok(info.saved_queries),
+            Err(_) => Ok(Vec::new()),
+        }
+    } else {
+        Ok(Vec::new())
+    }
+}
+
+#[tauri::command]
+pub fn save_query(path: String, name: String, sql: String) -> Result<(), String> {
+    let project_path = Path::new(&path);
+    let info_path = project_path.join(INFO_FILE);
+    
+    let mut info = if info_path.exists() {
+        let content = fs::read_to_string(&info_path).map_err(|e| e.to_string())?;
+        serde_json::from_str::<ProjectInfo>(&content).unwrap_or_default()
+    } else {
+        ProjectInfo::default()
+    };
+
+    // Remove if already exists with same name
+    info.saved_queries.retain(|q| q.name != name);
+    info.saved_queries.push(SavedQuery { name, sql });
+
+    let content = serde_json::to_string_pretty(&info).map_err(|e| e.to_string())?;
+    fs::write(info_path, content).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
 
 #[tauri::command]
 pub fn get_project_info(path: String) -> Result<Option<ProjectInfo>, String> {
@@ -43,6 +90,7 @@ pub fn detect_and_save_project_info(path: String) -> Result<ProjectInfo, String>
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_secs(),
+        saved_queries: Vec::new(),
     };
 
     let info_path = project_path.join(INFO_FILE);
