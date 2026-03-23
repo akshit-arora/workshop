@@ -7,6 +7,7 @@ import { readDir } from "@tauri-apps/plugin-fs";
 import { Terminal } from "./components/Terminal";
 import { DatabaseViewer } from "./components/DatabaseViewer";
 import { LogViewer } from "./components/LogViewer";
+import { Tools } from "./components/Tools";
 import "./App.css";
 
 const DAISY_THEMES = [
@@ -892,6 +893,12 @@ function App() {
                   Projects
                 </a>
               </li>
+              <li>
+                <a className={view === 'tools' ? 'active' : ''} onClick={() => setView('tools')}>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" /></svg>
+                  Tools
+                </a>
+              </li>
               {activeProject && (
                 <>
                   <li>
@@ -936,6 +943,9 @@ function App() {
           </div>
           <div className={`${view === 'settings' ? 'block' : 'hidden'}`}>
             <Settings tempName={tempName} setTempName={setTempName} tempTheme={tempTheme} setTempTheme={setTempTheme} setTheme={setTheme} DAISY_THEMES={DAISY_THEMES} saveSettings={saveSettings} editors={editors} setEditors={setEditors} defaultEditorId={defaultEditorId} setDefaultEditorId={setDefaultEditorId} db={db} dbKeepAlive={dbKeepAlive} setDbKeepAlive={setDbKeepAlive} />
+          </div>
+          <div className={`h-full ${view === 'tools' ? 'block' : 'hidden'}`}>
+            <Tools />
           </div>
           {activeProject && (
             <div className={`h-full ${view === 'database' ? 'block' : 'hidden'}`}>
