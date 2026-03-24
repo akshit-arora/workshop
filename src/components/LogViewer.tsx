@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
 
 interface LogFile {
     name: string;
@@ -26,14 +27,21 @@ export const LogViewer = ({ projectPath }: { projectPath: string }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [limit, setLimit] = useState(500);
+    const [autoRefresh, setAutoRefresh] = useState(true);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const lastSeenLogRef = useRef<string | null>(null);
+    const lastModifiedRef = useRef<number>(0);
+    const lastLaravelLogModifiedRef = useRef<number>(0);
 
     useEffect(() => {
         setSelectedLog(null);
         setEntries([]);
         setError(null);
         setSelectedLevel("ALL");
-        fetchLogFiles();
+        lastSeenLogRef.current = null;
+        lastModifiedRef.current = 0;
+        lastLaravelLogModifiedRef.current = 0;
+        fetchLogFiles(true);
     }, [projectPath]);
 
     useEffect(() => {
@@ -44,21 +52,74 @@ export const LogViewer = ({ projectPath }: { projectPath: string }) => {
         }
     }, [selectedLog, limit]);
 
-    const fetchLogFiles = async () => {
-        setLoading(true);
+    // Auto-refresh interval
+    useEffect(() => {
+        let interval: any;
+        if (autoRefresh) {
+            interval = setInterval(() => {
+                refreshLogsSilently();
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [autoRefresh, selectedLog, projectPath]);
+
+    const fetchLogFiles = async (selectDefault = false) => {
+        if (!selectDefault) setLoading(true);
         try {
             const files = await invoke<LogFile[]>("list_laravel_logs", { projectPath });
             setLogFiles(files);
             
             // Always try to select the best log for the NEW project
-            if (files.length > 0) {
+            if (selectDefault && files.length > 0) {
                 const laravelLog = files.find(f => f.name === "laravel.log");
-                setSelectedLog(laravelLog || files[0]);
+                const defaultLog = laravelLog || files[0];
+                setSelectedLog(defaultLog);
+                lastModifiedRef.current = defaultLog.last_modified;
+                
+                if (laravelLog) {
+                    lastLaravelLogModifiedRef.current = laravelLog.last_modified;
+                }
             }
         } catch (e: any) {
             setError(e.toString());
         } finally {
-            setLoading(false);
+            if (!selectDefault) setLoading(false);
+        }
+    };
+
+    const refreshLogsSilently = async () => {
+        try {
+            const files = await invoke<LogFile[]>("list_laravel_logs", { projectPath });
+            const laravelLog = files.find(f => f.name === "laravel.log");
+            
+            // 1. Check for notifications (always check laravel.log)
+            if (laravelLog && laravelLog.last_modified > lastLaravelLogModifiedRef.current) {
+                lastLaravelLogModifiedRef.current = laravelLog.last_modified;
+                
+                // If laravel.log is selected, readLog will handle it
+                // If NOT selected, we need to fetch it specifically for notifications
+                if (selectedLog?.name !== 'laravel.log') {
+                    const data = await invoke<string>("read_laravel_log", { 
+                        filePath: laravelLog.path, 
+                        lastLines: 50 // Just enough for notification check
+                    });
+                    const parsed = parseLogs(data);
+                    await checkForErrorNotifications(parsed);
+                }
+            }
+
+            // 2. Refresh current UI if needed
+            if (selectedLog) {
+                const currentLog = files.find(f => f.path === selectedLog.path);
+                if (currentLog && currentLog.last_modified > lastModifiedRef.current) {
+                    lastModifiedRef.current = currentLog.last_modified;
+                    await readLog(true);
+                }
+            }
+            
+            setLogFiles(files);
+        } catch (e) {
+            console.error("Silent refresh failed", e);
         }
     };
 
@@ -107,25 +168,78 @@ export const LogViewer = ({ projectPath }: { projectPath: string }) => {
         return entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     };
 
-    const readLog = async () => {
+    const checkForErrorNotifications = async (newEntries: LogEntry[]) => {
+        if (newEntries.length === 0) return;
+        
+        const latestEntry = newEntries[0];
+        const latestKey = `${latestEntry.timestamp}-${latestEntry.message}`;
+        
+        // If we haven't seen any log yet, just set the reference
+        if (!lastSeenLogRef.current) {
+            lastSeenLogRef.current = latestKey;
+            return;
+        }
+        
+        // If it's the same as before, nothing new
+        if (lastSeenLogRef.current === latestKey) return;
+        
+        // Find entries newer than the last seen one
+        const newerEntries = [];
+        for (const entry of newEntries) {
+            const key = `${entry.timestamp}-${entry.message}`;
+            if (key === lastSeenLogRef.current) break;
+            newerEntries.push(entry);
+        }
+        
+        lastSeenLogRef.current = latestKey;
+        
+        // Check for Errors in newer entries
+        const errorEntries = newerEntries.filter(e => 
+            ['ERROR', 'CRITICAL', 'ALERT', 'EMERGENCY'].includes(e.level.toUpperCase())
+        );
+        
+        if (errorEntries.length > 0) {
+            let permission = await isPermissionGranted();
+            if (!permission) {
+                const permissionResponse = await requestPermission();
+                permission = permissionResponse === 'granted';
+            }
+            
+            if (permission) {
+                sendNotification({
+                    title: `Laravel Error Detected`,
+                    body: errorEntries[0].message.substring(0, 100) + (errorEntries[0].message.length > 100 ? '...' : ''),
+                });
+            }
+        }
+    };
+
+    const readLog = async (silent = false) => {
         if (!selectedLog) return;
-        setLoading(true);
+        if (!silent) setLoading(true);
         try {
             const data = await invoke<string>("read_laravel_log", { 
                 filePath: selectedLog.path, 
                 lastLines: limit 
             });
             const parsed = parseLogs(data);
+            
+            // Check for notifications before updating state
+            if (selectedLog.name === 'laravel.log') {
+                await checkForErrorNotifications(parsed);
+            }
+            
             setEntries(parsed);
             
             // For descending order, we usually want to be at the top
-            if (scrollRef.current) {
+            // Only scroll if NOT silent or if we were already at the top
+            if (!silent && scrollRef.current) {
                 scrollRef.current.scrollTo({ top: 0, behavior: 'instant' as any });
             }
         } catch (e: any) {
             setError(e.toString());
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     };
 
@@ -177,7 +291,11 @@ export const LogViewer = ({ projectPath }: { projectPath: string }) => {
                             <button 
                                 key={file.path}
                                 className={`btn btn-xs whitespace-nowrap ${selectedLog?.path === file.path ? 'btn-primary' : 'btn-ghost'}`}
-                                onClick={() => setSelectedLog(file)}
+                                onClick={() => {
+                                    setSelectedLog(file);
+                                    lastModifiedRef.current = file.last_modified;
+                                    lastSeenLogRef.current = null;
+                                }}
                             >
                                 {file.name}
                             </button>
@@ -186,6 +304,16 @@ export const LogViewer = ({ projectPath }: { projectPath: string }) => {
                 </div>
 
                 <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase opacity-40">Live</span>
+                        <input 
+                            type="checkbox" 
+                            className="toggle toggle-xs toggle-primary" 
+                            checked={autoRefresh}
+                            onChange={(e) => setAutoRefresh(e.target.checked)}
+                        />
+                    </div>
+
                     <div className="flex items-center gap-2">
                         <span className="text-xs font-bold opacity-40 uppercase">Filter:</span>
                         <select 
@@ -304,6 +432,7 @@ export const LogViewer = ({ projectPath }: { projectPath: string }) => {
                         <>
                             <span>Size: {(selectedLog.size / 1024).toFixed(2)} KB</span>
                             <span className="border-l border-base-content/10 pl-4">Last Modified: {new Date(selectedLog.last_modified * 1000).toLocaleString()}</span>
+                            {autoRefresh && <span className="text-primary animate-pulse ml-2">● Live</span>}
                         </>
                     )}
                 </div>

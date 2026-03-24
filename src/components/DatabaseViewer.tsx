@@ -550,6 +550,17 @@ export const DatabaseViewer = ({ projectPath, keepAliveMinutes }: { projectPath:
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // If an input, textarea or contenteditable is focused, let it handle the keyboard event
+    const target = e.target as HTMLElement;
+    if (
+      target.tagName === 'INPUT' || 
+      target.tagName === 'TEXTAREA' || 
+      target.tagName === 'SELECT' ||
+      target.isContentEditable
+    ) {
+      return;
+    }
+
     if (!data || data.rows.length === 0 || detailedRow) return;
 
     const rowCount = data.rows.length;
