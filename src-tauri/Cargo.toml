@@ -35,3 +35,6 @@ tokio = { version = "1", features = ["full"] }
 
 [dev-dependencies]
 tempfile = "3"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"

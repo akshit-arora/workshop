@@ -12,21 +12,22 @@ fn open_in_editor(command: String, path: String) -> Result<(), String> {
     }
 }
 
-mod terminal;
-mod project;
 mod db_viewer;
 mod logs;
+mod project;
+mod terminal;
 
 #[cfg(test)]
-mod project_tests;
+mod db_viewer_tests;
 #[cfg(test)]
 mod logs_tests;
 #[cfg(test)]
-mod db_viewer_tests;
+mod project_tests;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(terminal::TerminalState::default())
         .manage(db_viewer::DbState::default())
         .plugin(tauri_plugin_opener::init())

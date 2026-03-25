@@ -1,10 +1,12 @@
 use serde::{Deserialize, Serialize};
+use sqlx::{
+    mysql::MySqlPoolOptions, sqlite::SqlitePoolOptions, Column, MySqlPool, Row, SqlitePool,
+};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use sqlx::{Row, Column, MySqlPool, SqlitePool, mysql::MySqlPoolOptions, sqlite::SqlitePoolOptions};
 use tauri::State;
 
 use crate::project::DbConfig;
@@ -79,9 +81,12 @@ pub async fn get_laravel_db_config(project_path: String) -> Result<DbConfig, Str
     }
 
     let env = parse_env_file(&env_path);
-    
-    let connection = env.get("DB_CONNECTION").cloned().unwrap_or_else(|| "mysql".to_string());
-    
+
+    let connection = env
+        .get("DB_CONNECTION")
+        .cloned()
+        .unwrap_or_else(|| "mysql".to_string());
+
     // Default database for Laravel SQLite is often 'database/database.sqlite' if not specified
     let database = if let Some(db) = env.get("DB_DATABASE") {
         db.clone()
@@ -118,19 +123,33 @@ pub(crate) async fn create_pool(config: &DbConfig, project_path: &str) -> Result
             } else {
                 // Try several common Laravel locations for sqlite
                 let p1 = Path::new(project_path).join(&config.database);
-                let p2 = Path::new(project_path).join("database").join(&config.database);
-                let p3 = Path::new(project_path).join("database").join("database.sqlite");
-                
-                if p1.exists() { p1 }
-                else if p2.exists() { p2 }
-                else if p3.exists() { p3 }
-                else { p1 } // Default to p1 if none exist (it will fail later with clear error)
+                let p2 = Path::new(project_path)
+                    .join("database")
+                    .join(&config.database);
+                let p3 = Path::new(project_path)
+                    .join("database")
+                    .join("database.sqlite");
+
+                if p1.exists() {
+                    p1
+                } else if p2.exists() {
+                    p2
+                } else if p3.exists() {
+                    p3
+                } else {
+                    p1
+                } // Default to p1 if none exist (it will fail later with clear error)
             };
 
             if !db_path.exists() {
-                return Err(format!("SQLite database not found. Tried: {}, {}", 
+                return Err(format!(
+                    "SQLite database not found. Tried: {}, {}",
                     Path::new(project_path).join(&config.database).display(),
-                    Path::new(project_path).join("database").join(&config.database).display()));
+                    Path::new(project_path)
+                        .join("database")
+                        .join(&config.database)
+                        .display()
+                ));
             }
 
             let pool = SqlitePoolOptions::new()
@@ -145,7 +164,10 @@ pub(crate) async fn create_pool(config: &DbConfig, project_path: &str) -> Result
             let port = config.port.as_deref().unwrap_or("3306");
             let user = config.username.as_deref().unwrap_or("root");
             let pass = config.password.as_deref().unwrap_or("");
-            let url = format!("mysql://{}:{}@{}:{}/{}", user, pass, host, port, config.database);
+            let url = format!(
+                "mysql://{}:{}@{}:{}/{}",
+                user, pass, host, port, config.database
+            );
             let pool = MySqlPoolOptions::new()
                 .max_connections(5)
                 .connect(&url)
@@ -153,7 +175,10 @@ pub(crate) async fn create_pool(config: &DbConfig, project_path: &str) -> Result
                 .map_err(|e| e.to_string())?;
             Ok(DbPool::MySql(pool))
         }
-        _ => Err(format!("Unsupported database connection: {}", config.connection)),
+        _ => Err(format!(
+            "Unsupported database connection: {}",
+            config.connection
+        )),
     }
 }
 
@@ -166,7 +191,9 @@ async fn get_or_create_pool(
     {
         let mut sessions = state.sessions.lock().unwrap();
         if let Some(active) = sessions.get_mut(project_path) {
-            if active.config.connection == config.connection && active.config.database == config.database {
+            if active.config.connection == config.connection
+                && active.config.database == config.database
+            {
                 active.last_activity = Instant::now();
                 return Ok(active.pool.clone());
             }
@@ -175,17 +202,20 @@ async fn get_or_create_pool(
 
     // 2. Create new pool (no lock held)
     let pool = create_pool(config, project_path).await?;
-    
+
     // 3. Insert new pool
     {
         let mut sessions = state.sessions.lock().unwrap();
-        sessions.insert(project_path.to_string(), ActiveSession {
-            pool: pool.clone(),
-            last_activity: Instant::now(),
-            config: config.clone(),
-        });
+        sessions.insert(
+            project_path.to_string(),
+            ActiveSession {
+                pool: pool.clone(),
+                last_activity: Instant::now(),
+                config: config.clone(),
+            },
+        );
     }
-    
+
     Ok(pool)
 }
 
@@ -197,28 +227,28 @@ pub async fn cleanup_expired_sessions(
     let mut sessions = state.sessions.lock().unwrap();
     let now = Instant::now();
     let timeout = Duration::from_secs(keep_alive_minutes * 60);
-    
-    sessions.retain(|_, session| {
-        now.duration_since(session.last_activity) < timeout
-    });
-    
+
+    sessions.retain(|_, session| now.duration_since(session.last_activity) < timeout);
+
     Ok(())
 }
 
 #[tauri::command]
 pub async fn list_tables(
     state: State<'_, DbState>,
-    config: DbConfig, 
-    project_path: String
+    config: DbConfig,
+    project_path: String,
 ) -> Result<Vec<String>, String> {
     let pool = get_or_create_pool(&state, &config, &project_path).await?;
 
     match pool {
         DbPool::Sqlite(p) => {
-            let rows = sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
-                .fetch_all(&p)
-                .await
-                .map_err(|e| e.to_string())?;
+            let rows = sqlx::query(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';",
+            )
+            .fetch_all(&p)
+            .await
+            .map_err(|e| e.to_string())?;
             Ok(rows.iter().map(|row| row.get::<String, _>(0)).collect())
         }
         DbPool::MySql(p) => {
@@ -234,9 +264,9 @@ pub async fn list_tables(
 #[tauri::command]
 pub async fn get_table_schema(
     state: State<'_, DbState>,
-    config: DbConfig, 
-    project_path: String, 
-    table: String
+    config: DbConfig,
+    project_path: String,
+    table: String,
 ) -> Result<Vec<ColumnSchema>, String> {
     let pool = get_or_create_pool(&state, &config, &project_path).await?;
 
@@ -246,44 +276,52 @@ pub async fn get_table_schema(
                 .fetch_all(&p)
                 .await
                 .map_err(|e| e.to_string())?;
-            
-            Ok(rows.iter().map(|row| ColumnSchema {
-                name: row.get::<String, _>("name"),
-                data_type: row.get::<String, _>("type"),
-                is_nullable: row.get::<i32, _>("notnull") == 0,
-                is_primary_key: row.get::<i32, _>("pk") > 0,
-            }).collect())
+
+            Ok(rows
+                .iter()
+                .map(|row| ColumnSchema {
+                    name: row.get::<String, _>("name"),
+                    data_type: row.get::<String, _>("type"),
+                    is_nullable: row.get::<i32, _>("notnull") == 0,
+                    is_primary_key: row.get::<i32, _>("pk") > 0,
+                })
+                .collect())
         }
         DbPool::MySql(p) => {
             let rows = sqlx::query(&format!("DESCRIBE `{}`", table))
                 .fetch_all(&p)
                 .await
                 .map_err(|e| e.to_string())?;
-            
-            Ok(rows.iter().map(|row| ColumnSchema {
-                name: row.get::<String, _>("Field"),
-                data_type: row.get::<String, _>("Type"),
-                is_nullable: row.get::<String, _>("Null") == "YES",
-                is_primary_key: row.get::<String, _>("Key") == "PRI",
-            }).collect())
+
+            Ok(rows
+                .iter()
+                .map(|row| ColumnSchema {
+                    name: row.get::<String, _>("Field"),
+                    data_type: row.get::<String, _>("Type"),
+                    is_nullable: row.get::<String, _>("Null") == "YES",
+                    is_primary_key: row.get::<String, _>("Key") == "PRI",
+                })
+                .collect())
         }
     }
 }
 
-use chrono::{DateTime, Utc, NaiveDateTime, NaiveDate, NaiveTime};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 
 fn sqlite_row_to_json(row: &sqlx::sqlite::SqliteRow) -> serde_json::Value {
     let mut map = serde_json::Map::new();
     for col in row.columns() {
         let name = col.name();
         let idx = col.ordinal();
-        
+
         let value = if let Ok(v) = row.try_get::<String, usize>(idx) {
             serde_json::Value::String(v)
         } else if let Ok(v) = row.try_get::<i64, usize>(idx) {
             serde_json::Value::Number(v.into())
         } else if let Ok(v) = row.try_get::<f64, usize>(idx) {
-            serde_json::Number::from_f64(v).map(serde_json::Value::Number).unwrap_or(serde_json::Value::Null)
+            serde_json::Number::from_f64(v)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null)
         } else if let Ok(v) = row.try_get::<bool, usize>(idx) {
             serde_json::Value::Bool(v)
         } else if let Ok(v) = row.try_get::<i32, usize>(idx) {
@@ -299,7 +337,7 @@ fn sqlite_row_to_json(row: &sqlx::sqlite::SqliteRow) -> serde_json::Value {
         } else {
             serde_json::Value::Null
         };
-        
+
         map.insert(name.to_string(), value);
     }
     serde_json::Value::Object(map)
@@ -310,7 +348,7 @@ fn mysql_row_to_json(row: &sqlx::mysql::MySqlRow) -> serde_json::Value {
     for col in row.columns() {
         let name = col.name();
         let idx = col.ordinal();
-        
+
         let value = if let Ok(v) = row.try_get::<String, usize>(idx) {
             serde_json::Value::String(v)
         } else if let Ok(v) = row.try_get::<i64, usize>(idx) {
@@ -326,7 +364,9 @@ fn mysql_row_to_json(row: &sqlx::mysql::MySqlRow) -> serde_json::Value {
         } else if let Ok(v) = row.try_get::<bool, usize>(idx) {
             serde_json::Value::Bool(v)
         } else if let Ok(v) = row.try_get::<f64, usize>(idx) {
-            serde_json::Number::from_f64(v).map(serde_json::Value::Number).unwrap_or(serde_json::Value::Null)
+            serde_json::Number::from_f64(v)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null)
         } else if let Ok(v) = row.try_get::<NaiveDateTime, usize>(idx) {
             serde_json::Value::String(v.format("%Y-%m-%d %H:%M:%S").to_string())
         } else if let Ok(v) = row.try_get::<DateTime<Utc>, usize>(idx) {
@@ -338,7 +378,7 @@ fn mysql_row_to_json(row: &sqlx::mysql::MySqlRow) -> serde_json::Value {
         } else {
             serde_json::Value::Null
         };
-        
+
         map.insert(name.to_string(), value);
     }
     serde_json::Value::Object(map)
@@ -347,10 +387,10 @@ fn mysql_row_to_json(row: &sqlx::mysql::MySqlRow) -> serde_json::Value {
 #[tauri::command]
 pub async fn get_table_data(
     state: State<'_, DbState>,
-    config: DbConfig, 
-    project_path: String, 
-    table: String, 
-    page: u32, 
+    config: DbConfig,
+    project_path: String,
+    table: String,
+    page: u32,
     per_page: u32,
     sort_col: Option<String>,
     sort_dir: Option<String>,
@@ -373,36 +413,66 @@ pub async fn get_table_data(
 
     match pool {
         DbPool::Sqlite(p) => {
-            let query_str = format!("SELECT * FROM `{}` {} {} LIMIT {} OFFSET {}", table, where_str, order_by, per_page, offset);
+            let query_str = format!(
+                "SELECT * FROM `{}` {} {} LIMIT {} OFFSET {}",
+                table, where_str, order_by, per_page, offset
+            );
             let rows = sqlx::query(&query_str)
                 .fetch_all(&p)
                 .await
                 .map_err(|e| e.to_string())?;
 
             if rows.is_empty() {
-                return Ok(QueryResult { columns: vec![], rows: vec![], total_count: None });
+                return Ok(QueryResult {
+                    columns: vec![],
+                    rows: vec![],
+                    total_count: None,
+                });
             }
 
-            let columns: Vec<String> = rows[0].columns().iter().map(|c| c.name().to_string()).collect();
+            let columns: Vec<String> = rows[0]
+                .columns()
+                .iter()
+                .map(|c| c.name().to_string())
+                .collect();
             let result_rows = rows.iter().map(sqlite_row_to_json).collect();
-            
-            Ok(QueryResult { columns, rows: result_rows, total_count: None })
+
+            Ok(QueryResult {
+                columns,
+                rows: result_rows,
+                total_count: None,
+            })
         }
         DbPool::MySql(p) => {
-            let query_str = format!("SELECT * FROM `{}` {} {} LIMIT {} OFFSET {}", table, where_str, order_by, per_page, offset);
+            let query_str = format!(
+                "SELECT * FROM `{}` {} {} LIMIT {} OFFSET {}",
+                table, where_str, order_by, per_page, offset
+            );
             let rows = sqlx::query(&query_str)
                 .fetch_all(&p)
                 .await
                 .map_err(|e| e.to_string())?;
 
             if rows.is_empty() {
-                return Ok(QueryResult { columns: vec![], rows: vec![], total_count: None });
+                return Ok(QueryResult {
+                    columns: vec![],
+                    rows: vec![],
+                    total_count: None,
+                });
             }
 
-            let columns: Vec<String> = rows[0].columns().iter().map(|c| c.name().to_string()).collect();
+            let columns: Vec<String> = rows[0]
+                .columns()
+                .iter()
+                .map(|c| c.name().to_string())
+                .collect();
             let result_rows = rows.iter().map(mysql_row_to_json).collect();
-            
-            Ok(QueryResult { columns, rows: result_rows, total_count: None })
+
+            Ok(QueryResult {
+                columns,
+                rows: result_rows,
+                total_count: None,
+            })
         }
     }
 }
@@ -426,19 +496,21 @@ pub async fn get_table_count(
 
     match pool {
         DbPool::Sqlite(p) => {
-            let total_count: i64 = sqlx::query(&format!("SELECT COUNT(*) FROM `{}` {}", table, where_str))
-                .fetch_one(&p)
-                .await
-                .map_err(|e| e.to_string())?
-                .get(0);
+            let total_count: i64 =
+                sqlx::query(&format!("SELECT COUNT(*) FROM `{}` {}", table, where_str))
+                    .fetch_one(&p)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .get(0);
             Ok(total_count)
         }
         DbPool::MySql(p) => {
-            let total_count: i64 = sqlx::query(&format!("SELECT COUNT(*) FROM `{}` {}", table, where_str))
-                .fetch_one(&p)
-                .await
-                .map_err(|e| e.to_string())?
-                .get(0);
+            let total_count: i64 =
+                sqlx::query(&format!("SELECT COUNT(*) FROM `{}` {}", table, where_str))
+                    .fetch_one(&p)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .get(0);
             Ok(total_count)
         }
     }
@@ -461,13 +533,25 @@ pub async fn execute_raw_sql(
                 .map_err(|e| e.to_string())?;
 
             if rows.is_empty() {
-                return Ok(QueryResult { columns: vec![], rows: vec![], total_count: Some(0) });
+                return Ok(QueryResult {
+                    columns: vec![],
+                    rows: vec![],
+                    total_count: Some(0),
+                });
             }
 
-            let columns: Vec<String> = rows[0].columns().iter().map(|c| c.name().to_string()).collect();
+            let columns: Vec<String> = rows[0]
+                .columns()
+                .iter()
+                .map(|c| c.name().to_string())
+                .collect();
             let result_rows = rows.iter().map(sqlite_row_to_json).collect();
-            
-            Ok(QueryResult { columns, rows: result_rows, total_count: Some(rows.len() as i64) })
+
+            Ok(QueryResult {
+                columns,
+                rows: result_rows,
+                total_count: Some(rows.len() as i64),
+            })
         }
         DbPool::MySql(p) => {
             let rows = sqlx::query(&sql)
@@ -476,13 +560,25 @@ pub async fn execute_raw_sql(
                 .map_err(|e| e.to_string())?;
 
             if rows.is_empty() {
-                return Ok(QueryResult { columns: vec![], rows: vec![], total_count: Some(0) });
+                return Ok(QueryResult {
+                    columns: vec![],
+                    rows: vec![],
+                    total_count: Some(0),
+                });
             }
 
-            let columns: Vec<String> = rows[0].columns().iter().map(|c| c.name().to_string()).collect();
+            let columns: Vec<String> = rows[0]
+                .columns()
+                .iter()
+                .map(|c| c.name().to_string())
+                .collect();
             let result_rows = rows.iter().map(mysql_row_to_json).collect();
-            
-            Ok(QueryResult { columns, rows: result_rows, total_count: Some(rows.len() as i64) })
+
+            Ok(QueryResult {
+                columns,
+                rows: result_rows,
+                total_count: Some(rows.len() as i64),
+            })
         }
     }
 }
@@ -497,14 +593,14 @@ pub async fn update_table_row(
     data: HashMap<String, serde_json::Value>,
 ) -> Result<(), String> {
     let pool = get_or_create_pool(&state, &config, &project_path).await?;
-    
+
     if primary_keys.is_empty() {
         return Err("No primary keys provided to identify the record".to_string());
     }
 
     let mut set_clauses = Vec::new();
     let mut where_clauses = Vec::new();
-    
+
     for (column, _) in &data {
         set_clauses.push(format!("`{}` = ?", column));
     }

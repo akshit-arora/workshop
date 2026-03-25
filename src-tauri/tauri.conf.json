@@ -32,5 +32,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/akshit-arora/workshop/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhBQUNEQUNGMzg3OTg2MjcKUldRbmhuazR6OXFzaXE3VWphVE9OU2ZiUFRKMjBZcm44SHk0eFE0Q0tyQjBROVhWc0d4eFNkZlMK"
+    }
   }
 }

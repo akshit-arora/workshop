@@ -74,7 +74,7 @@ const INFO_FILE: &str = ".workshop.json";
 pub fn save_custom_db_config(path: String, config: Option<DbConfig>) -> Result<(), String> {
     let project_path = Path::new(&path);
     let info_path = project_path.join(INFO_FILE);
-    
+
     let mut info = if info_path.exists() {
         let content = fs::read_to_string(&info_path).map_err(|e| e.to_string())?;
         serde_json::from_str::<ProjectInfo>(&content).unwrap_or_default()
@@ -109,7 +109,7 @@ pub fn get_saved_queries(path: String) -> Result<Vec<SavedQuery>, String> {
 pub fn save_query(path: String, name: String, sql: String) -> Result<(), String> {
     let project_path = Path::new(&path);
     let info_path = project_path.join(INFO_FILE);
-    
+
     let mut info = if info_path.exists() {
         let content = fs::read_to_string(&info_path).map_err(|e| e.to_string())?;
         serde_json::from_str::<ProjectInfo>(&content).unwrap_or_default()
@@ -142,11 +142,11 @@ pub fn get_project_info(path: String) -> Result<Option<ProjectInfo>, String> {
 #[tauri::command]
 pub fn detect_and_save_project_info(path: String) -> Result<ProjectInfo, String> {
     let project_path = Path::new(&path);
-    
+
     // Check if it's a Laravel project
-    let is_laravel = project_path.join("artisan").exists() && 
-                     project_path.join("composer.json").exists();
-    
+    let is_laravel =
+        project_path.join("artisan").exists() && project_path.join("composer.json").exists();
+
     let project_type = if is_laravel {
         "Laravel".to_string()
     } else {

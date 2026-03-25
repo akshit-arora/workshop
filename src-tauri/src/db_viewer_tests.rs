@@ -10,14 +10,18 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let env_path = dir.path().join(".env");
 
-        std::fs::write(&env_path, r#"
+        std::fs::write(
+            &env_path,
+            r#"
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_DATABASE=forge
 DB_USERNAME=root
 DB_PASSWORD=secret
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let env = parse_env_file(&env_path);
         assert_eq!(env.get("DB_CONNECTION").unwrap(), "mysql");
@@ -33,11 +37,15 @@ DB_PASSWORD=secret
         let dir = tempfile::TempDir::new().unwrap();
         let env_path = dir.path().join(".env");
 
-        std::fs::write(&env_path, r#"
+        std::fs::write(
+            &env_path,
+            r#"
 APP_NAME="My Cool App"
 DB_PASSWORD='my secret'
 PLAIN_VALUE=noQuotes
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let env = parse_env_file(&env_path);
         assert_eq!(env.get("APP_NAME").unwrap(), "My Cool App");
@@ -50,12 +58,16 @@ PLAIN_VALUE=noQuotes
         let dir = tempfile::TempDir::new().unwrap();
         let env_path = dir.path().join(".env");
 
-        std::fs::write(&env_path, r#"
+        std::fs::write(
+            &env_path,
+            r#"
 # This is a comment
 DB_HOST=localhost
 # Another comment
 DB_PORT=3306
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let env = parse_env_file(&env_path);
         assert_eq!(env.len(), 2);
@@ -218,14 +230,18 @@ DB_PORT=3306
         let dir = tempfile::TempDir::new().unwrap();
         let env_path = dir.path().join(".env");
 
-        std::fs::write(&env_path, r#"
+        std::fs::write(
+            &env_path,
+            r#"
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_DATABASE=laravel_app
 DB_USERNAME=root
 DB_PASSWORD=password123
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let result = get_laravel_db_config(dir.path().to_string_lossy().to_string()).await;
         assert!(result.is_ok());
@@ -244,10 +260,14 @@ DB_PASSWORD=password123
         let dir = tempfile::TempDir::new().unwrap();
         let env_path = dir.path().join(".env");
 
-        std::fs::write(&env_path, r#"
+        std::fs::write(
+            &env_path,
+            r#"
 DB_CONNECTION=sqlite
 DB_DATABASE=database/database.sqlite
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let result = get_laravel_db_config(dir.path().to_string_lossy().to_string()).await;
         assert!(result.is_ok());
@@ -308,7 +328,9 @@ DB_DATABASE=database/database.sqlite
 
         let result = create_pool(&config, "/tmp").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unsupported database connection"));
+        assert!(result
+            .unwrap_err()
+            .contains("Unsupported database connection"));
     }
 
     // ─── ActiveSession ─────────────────────────────────

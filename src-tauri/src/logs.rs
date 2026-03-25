@@ -1,6 +1,6 @@
+use serde::Serialize;
 use std::fs;
 use std::path::Path;
-use serde::Serialize;
 
 #[derive(Serialize)]
 pub struct LogFile {
@@ -13,7 +13,7 @@ pub struct LogFile {
 #[tauri::command]
 pub fn list_laravel_logs(project_path: String) -> Result<Vec<LogFile>, String> {
     let logs_dir = Path::new(&project_path).join("storage").join("logs");
-    
+
     if !logs_dir.exists() {
         return Ok(Vec::new());
     }
@@ -24,8 +24,13 @@ pub fn list_laravel_logs(project_path: String) -> Result<Vec<LogFile>, String> {
             let path = entry.path();
             if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("log") {
                 let metadata = entry.metadata().map_err(|e| e.to_string())?;
-                let last_modified = metadata.modified()
-                    .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs())
+                let last_modified = metadata
+                    .modified()
+                    .map(|t| {
+                        t.duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs()
+                    })
                     .unwrap_or(0);
 
                 log_files.push(LogFile {
@@ -46,8 +51,8 @@ pub fn list_laravel_logs(project_path: String) -> Result<Vec<LogFile>, String> {
 
 #[tauri::command]
 pub fn read_laravel_log(file_path: String, last_lines: usize) -> Result<String, String> {
-    use std::io::{Read, Seek, SeekFrom};
     use std::fs::File;
+    use std::io::{Read, Seek, SeekFrom};
 
     let path = Path::new(&file_path);
     if !path.exists() {
@@ -59,9 +64,11 @@ pub fn read_laravel_log(file_path: String, last_lines: usize) -> Result<String, 
     let file_size = metadata.len();
 
     // If file is small, just read it all
-    if file_size < 1024 * 512 { // 512KB
+    if file_size < 1024 * 512 {
+        // 512KB
         let mut content = String::new();
-        file.read_to_string(&mut content).map_err(|e| e.to_string())?;
+        file.read_to_string(&mut content)
+            .map_err(|e| e.to_string())?;
         let lines: Vec<&str> = content.lines().collect();
         if lines.len() <= last_lines {
             return Ok(content);
@@ -74,23 +81,24 @@ pub fn read_laravel_log(file_path: String, last_lines: usize) -> Result<String, 
     // For larger files, read the last 1MB and find the lines
     let read_size = std::cmp::min(file_size, 1024 * 1024); // Read up to 1MB
     let mut buffer = vec![0u8; read_size as usize];
-    file.seek(SeekFrom::End(-(read_size as i64))).map_err(|e| e.to_string())?;
+    file.seek(SeekFrom::End(-(read_size as i64)))
+        .map_err(|e| e.to_string())?;
     file.read_exact(&mut buffer).map_err(|e| e.to_string())?;
 
     let content = String::from_utf8_lossy(&buffer);
     let lines: Vec<&str> = content.lines().collect();
-    
+
     if lines.len() <= last_lines {
         Ok(content.into_owned())
     } else {
         let mut start = lines.len() - last_lines;
-        
+
         // Seek backward to find the start of the log entry (line starting with '[')
         // to ensure we don't start with an orphaned stack trace.
         while start > 0 && !lines[start].trim_start().starts_with('[') {
             start -= 1;
         }
-        
+
         Ok(lines[start..].join("\n"))
     }
 }

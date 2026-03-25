@@ -111,7 +111,12 @@ mod tests {
         let path = dir.path().to_string_lossy().to_string();
 
         // Save a query
-        save_query(path.clone(), "users".to_string(), "SELECT * FROM users".to_string()).unwrap();
+        save_query(
+            path.clone(),
+            "users".to_string(),
+            "SELECT * FROM users".to_string(),
+        )
+        .unwrap();
 
         let queries = get_saved_queries(path).unwrap();
         assert_eq!(queries.len(), 1);
@@ -124,8 +129,18 @@ mod tests {
         let dir = setup_temp_dir();
         let path = dir.path().to_string_lossy().to_string();
 
-        save_query(path.clone(), "users".to_string(), "SELECT * FROM users".to_string()).unwrap();
-        save_query(path.clone(), "users".to_string(), "SELECT id FROM users".to_string()).unwrap();
+        save_query(
+            path.clone(),
+            "users".to_string(),
+            "SELECT * FROM users".to_string(),
+        )
+        .unwrap();
+        save_query(
+            path.clone(),
+            "users".to_string(),
+            "SELECT id FROM users".to_string(),
+        )
+        .unwrap();
 
         let queries = get_saved_queries(path).unwrap();
         assert_eq!(queries.len(), 1);

@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import Database from "@tauri-apps/plugin-sql";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, ask, message } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { readDir } from "@tauri-apps/plugin-fs";
+import { check } from "@tauri-apps/plugin-updater";
 import { Terminal } from "./components/Terminal";
 import { DatabaseViewer } from "./components/DatabaseViewer";
 import { LogViewer } from "./components/LogViewer";
@@ -368,6 +369,32 @@ const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DA
     await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_editor_id', $1)", [id]);
   };
 
+  const handleCheckForUpdates = async () => {
+    try {
+      const update = await check();
+      if (update) {
+        const yes = await ask(`Update to version ${update.version} is available!\\n\\nDo you want to download and install it?`, {
+          title: 'Update Available',
+          kind: 'info',
+        });
+        if (yes) {
+          try {
+            await update.downloadAndInstall();
+            await message("Update installed successfully. The application will restart.", { title: "Update Success", kind: "info" });
+          } catch (dlErr) {
+            console.error("Failed to download and install:", dlErr);
+            await message(`Installation failed: ${dlErr}`, { title: "Update Failed", kind: "error" });
+          }
+        }
+      } else {
+        await message('You are on the latest version.', { title: 'No Update Found', kind: 'info' });
+      }
+    } catch (e) {
+      console.error("Update check failed:", e);
+      await message(`Failed to check for updates: ${e}`, { title: 'Update Error', kind: 'error' });
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto animate-in slide-in-from-bottom-4 duration-500 text-base-content">
       <h1 className="text-3xl font-bold mb-8">Settings</h1>
@@ -479,6 +506,19 @@ const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DA
           </div>
         </div>
 
+        <div className="card bg-base-200 border border-base-300 shadow-sm">
+          <div className="card-body">
+            <h2 className="card-title mb-2">Updates</h2>
+            <p className="text-xs opacity-60 mb-4">Check for the latest version of Workshop to get new features and bug fixes.</p>
+            <div className="flex gap-4 items-center">
+              <button className="btn btn-sm btn-outline" onClick={handleCheckForUpdates}>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                Check for Updates
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div className="flex justify-end pt-4">
           <button
             className="btn btn-primary px-10"
@@ -532,6 +572,32 @@ function App() {
     }
     loadProjectInfo();
   }, [activeProject]);
+
+  useEffect(() => {
+    async function checkForUpdatesOnStartup() {
+      try {
+        const update = await check();
+        if (update) {
+          const yes = await ask(`A new version of Workshop (${update.version}) is available. Do you want to download and install it?`, {
+            title: 'Update Available',
+            kind: 'info',
+          });
+          if (yes) {
+            try {
+              await update.downloadAndInstall();
+              await message("Update installed successfully. The application will restart.", { title: "Update Success", kind: "info" });
+            } catch (dlErr) {
+              console.error("Failed to download and install startup update:", dlErr);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Startup auto-update check failed:", e);
+      }
+    }
+    // Only run if not in a dev environment typically, but we'll run it to ensure it attempts.
+    checkForUpdatesOnStartup();
+  }, []);
 
   const removeInfo = async () => {
     if (activeProject) {
