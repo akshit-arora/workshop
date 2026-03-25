@@ -17,6 +17,13 @@ mod project;
 mod db_viewer;
 mod logs;
 
+#[cfg(test)]
+mod project_tests;
+#[cfg(test)]
+mod logs_tests;
+#[cfg(test)]
+mod db_viewer_tests;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

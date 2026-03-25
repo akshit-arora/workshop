@@ -24,7 +24,7 @@ pub struct ColumnSchema {
     pub is_primary_key: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum DbPool {
     MySql(MySqlPool),
     Sqlite(SqlitePool),
@@ -48,7 +48,7 @@ impl Default for DbState {
     }
 }
 
-fn parse_env_file(path: &Path) -> HashMap<String, String> {
+pub(crate) fn parse_env_file(path: &Path) -> HashMap<String, String> {
     let mut env = HashMap::new();
     if let Ok(content) = fs::read_to_string(path) {
         for line in content.lines() {
@@ -101,7 +101,7 @@ pub async fn get_laravel_db_config(project_path: String) -> Result<DbConfig, Str
     })
 }
 
-async fn create_pool(config: &DbConfig, project_path: &str) -> Result<DbPool, String> {
+pub(crate) async fn create_pool(config: &DbConfig, project_path: &str) -> Result<DbPool, String> {
     match config.connection.as_str() {
         "sqlite" => {
             if config.database == ":memory:" {
