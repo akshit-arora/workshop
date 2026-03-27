@@ -33,11 +33,10 @@ interface ProjectInfo {
   detected_at: number;
 }
 
-const Dashboard = ({ name, activeProject, openProjectFolder, setView, dbError, defaultEditor, openInEditor, projectInfo, onRemoveInfo }: {
+const Dashboard = ({ name, activeProject, openProjectFolder, dbError, defaultEditor, openInEditor, projectInfo, onRemoveInfo }: {
   name: string,
   activeProject: Project | null,
   openProjectFolder: (path: string) => Promise<void>,
-  setView: (view: string) => void,
   dbError: string | null,
   defaultEditor: TextEditor | null,
   openInEditor: (command: string, path: string) => Promise<void>,
@@ -980,7 +979,7 @@ function App() {
 
         <main className="flex-1 overflow-y-auto relative bg-base-100 p-8 text-base-content">
           <div className={`${view === 'dashboard' ? 'block' : 'hidden'}`}>
-            <Dashboard name={name} activeProject={activeProject} openProjectFolder={openProjectFolder} setView={setView} dbError={dbError} defaultEditor={editors.find(e => e.id === defaultEditorId) || null} openInEditor={openInEditor} projectInfo={projectInfo} onRemoveInfo={removeInfo} />
+            <Dashboard name={name} activeProject={activeProject} openProjectFolder={openProjectFolder} dbError={dbError} defaultEditor={editors.find(e => e.id === defaultEditorId) || null} openInEditor={openInEditor} projectInfo={projectInfo} onRemoveInfo={removeInfo} />
           </div>
           <div className={`${view === 'projects' ? 'block' : 'hidden'}`}>
             <Projects projects={projects} activeProject={activeProject} createProject={createProject} switchProject={switchProject} openProjectFolder={openProjectFolder} deleteProject={deleteProject} projectsRootPath={projectsRootPath} saveProjectsRoot={saveProjectsRoot} syncAutoDiscoveredProjects={syncAutoDiscoveredProjects} db={db} />
