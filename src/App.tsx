@@ -107,28 +107,6 @@ const Dashboard = ({ name, activeProject, openProjectFolder, setView, dbError, d
         </div>
       </div>
     )}
-
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12 text-base-content">
-      <div className="card bg-base-200 shadow-xl border border-base-300 hover:scale-[1.02] transition-all duration-300 cursor-default">
-        <div className="card-body">
-          <h2 className="card-title text-xl">Dynamic Layouts</h2>
-          <p className="opacity-70">Toggle the sidebar using the hamburger menu in the header. Notice the smooth transitions and responsive design.</p>
-          <div className="card-actions justify-end mt-4">
-            <button className="btn btn-primary btn-sm">Explore Features</button>
-          </div>
-        </div>
-      </div>
-
-      <div className="card bg-base-200 shadow-xl border border-base-300 hover:scale-[1.02] transition-all duration-300 cursor-default">
-        <div className="card-body">
-          <h2 className="card-title text-xl text-base-content">Theming Built-in</h2>
-          <p className="opacity-70">Included is a theme controller in the header. Try toggling between light and dark modes.</p>
-          <div className="card-actions justify-end mt-4">
-            <button className="btn btn-secondary btn-sm" onClick={() => setView("settings")}>Change Theme</button>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 );
 
@@ -743,7 +721,7 @@ function App() {
         console.error("Failed to cleanup sessions", e);
       }
     };
-    
+
     const interval = setInterval(cleanup, 60000); // Check every minute
     return () => clearInterval(interval);
   }, [dbKeepAlive]);
@@ -1037,9 +1015,8 @@ function App() {
 
       <footer className="footer px-4 py-1 bg-primary text-primary-content h-7 shrink-0 text-[10px] font-bold tracking-widest flex justify-between items-center z-30 shadow-inner">
         <div className="flex items-center gap-4 text-primary-content">
-          <span className="flex items-center gap-1 opacity-90"><div className="w-2 h-2 rounded-full bg-success"></div> connected</span>
           {projectInfo && (
-            <span className="opacity-90 uppercase border-l border-white/20 pl-4">{projectInfo.project_type}</span>
+            <span className="opacity-90 uppercase">{projectInfo.project_type}</span>
           )}
         </div>
         <div className="flex items-center gap-3">
