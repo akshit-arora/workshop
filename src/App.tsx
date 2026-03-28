@@ -287,14 +287,14 @@ const Projects = ({ projects, activeProject, createProject, switchProject, openP
   );
 };
 
-const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DAISY_THEMES, saveSettings, editors, setEditors, defaultEditorId, setDefaultEditorId, db, dbKeepAlive, setDbKeepAlive }: {
+const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DAISY_THEMES, setName, editors, setEditors, defaultEditorId, setDefaultEditorId, db, dbKeepAlive, setDbKeepAlive }: {
   tempName: string,
   setTempName: (val: string) => void,
   tempTheme: string,
   setTempTheme: (val: string) => void,
   setTheme: (val: string) => void,
   DAISY_THEMES: string[],
-  saveSettings: (name: string, theme: string, dbKeepAlive: number) => Promise<void>,
+  setName: (val: string) => void,
   editors: TextEditor[],
   setEditors: (editors: TextEditor[]) => void,
   defaultEditorId: string | null,
@@ -350,7 +350,7 @@ const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DA
     try {
       const update = await check();
       if (update) {
-        const yes = await ask(`Update to version ${update.version} is available!\\n\\nDo you want to download and install it?`, {
+        const yes = await ask(`Update to version ${update.version} is available!\n\nDo you want to download and install it?`, {
           title: 'Update Available',
           kind: 'info',
         });
@@ -388,7 +388,10 @@ const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DA
                 type="text"
                 className="input input-bordered w-full"
                 value={tempName}
-                onChange={(e) => setTempName(e.target.value)}
+                onChange={(e) => {
+                  setTempName(e.target.value);
+                  setName(e.target.value);
+                }}
               />
             </div>
           </div>
@@ -405,7 +408,7 @@ const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DA
                   className={`btn btn-sm capitalize ${tempTheme === t ? 'btn-primary' : 'btn-outline'}`}
                   onClick={() => {
                     setTempTheme(t);
-                    setTheme(t); // Real-time preview
+                    setTheme(t);
                   }}
                 >
                   {t}
@@ -495,15 +498,6 @@ const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DA
             </div>
           </div>
         </div>
-
-        <div className="flex justify-end pt-4">
-          <button
-            className="btn btn-primary px-10"
-            onClick={() => saveSettings(tempName, tempTheme, dbKeepAlive)}
-          >
-            Save Changes
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -527,6 +521,7 @@ function App() {
   const [defaultEditorId, setDefaultEditorId] = useState<string | null>(null);
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null);
   const [dbKeepAlive, setDbKeepAlive] = useState(10);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     async function loadProjectInfo() {
@@ -698,9 +693,11 @@ function App() {
           setShowFTUE(true);
           setTempTheme("light");
         }
+        setLoaded(true);
       } catch (err: any) {
         console.error("DB Error:", err);
         setDbError(err.toString());
+        setLoaded(true);
       }
     }
     initDb();
@@ -724,6 +721,34 @@ function App() {
     const interval = setInterval(cleanup, 60000); // Check every minute
     return () => clearInterval(interval);
   }, [dbKeepAlive]);
+
+  // Auto-save settings
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (db && name && loaded) {
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('name', $1)", [name]);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [name, db, loaded]);
+
+  useEffect(() => {
+    const save = async () => {
+      if (db && theme && loaded) {
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('theme', $1)", [theme]);
+      }
+    };
+    save();
+  }, [theme, db, loaded]);
+
+  useEffect(() => {
+    const save = async () => {
+      if (db && loaded) {
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('db_keep_alive', $1)", [dbKeepAlive.toString()]);
+      }
+    };
+    save();
+  }, [dbKeepAlive, db, loaded]);
 
   const saveSettings = async (newName: string, newTheme: string, newDbKeepAlive: number) => {
     if (!db) return;
@@ -985,7 +1010,7 @@ function App() {
             <Projects projects={projects} activeProject={activeProject} createProject={createProject} switchProject={switchProject} openProjectFolder={openProjectFolder} deleteProject={deleteProject} projectsRootPath={projectsRootPath} saveProjectsRoot={saveProjectsRoot} syncAutoDiscoveredProjects={syncAutoDiscoveredProjects} db={db} />
           </div>
           <div className={`${view === 'settings' ? 'block' : 'hidden'}`}>
-            <Settings tempName={tempName} setTempName={setTempName} tempTheme={tempTheme} setTempTheme={setTempTheme} setTheme={setTheme} DAISY_THEMES={DAISY_THEMES} saveSettings={saveSettings} editors={editors} setEditors={setEditors} defaultEditorId={defaultEditorId} setDefaultEditorId={setDefaultEditorId} db={db} dbKeepAlive={dbKeepAlive} setDbKeepAlive={setDbKeepAlive} />
+            <Settings tempName={tempName} setTempName={setTempName} tempTheme={tempTheme} setTempTheme={setTempTheme} setTheme={setTheme} DAISY_THEMES={DAISY_THEMES} setName={setName} editors={editors} setEditors={setEditors} defaultEditorId={defaultEditorId} setDefaultEditorId={setDefaultEditorId} db={db} dbKeepAlive={dbKeepAlive} setDbKeepAlive={setDbKeepAlive} />
           </div>
           <div className={`h-full ${view === 'tools' ? 'block' : 'hidden'}`}>
             <Tools />
