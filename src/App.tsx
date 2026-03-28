@@ -287,7 +287,7 @@ const Projects = ({ projects, activeProject, createProject, switchProject, openP
   );
 };
 
-const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DAISY_THEMES, setName, editors, setEditors, defaultEditorId, setDefaultEditorId, db, dbKeepAlive, setDbKeepAlive }: {
+const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DAISY_THEMES, setName, editors, defaultEditorId, dbKeepAlive, setDbKeepAlive, newEditorName, setNewEditorName, newEditorCmd, setNewEditorCmd, handleAddEditor, handleRemoveEditor, handleSetDefault }: {
   tempName: string,
   setTempName: (val: string) => void,
   tempTheme: string,
@@ -296,56 +296,17 @@ const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DA
   DAISY_THEMES: string[],
   setName: (val: string) => void,
   editors: TextEditor[],
-  setEditors: (editors: TextEditor[]) => void,
   defaultEditorId: string | null,
-  setDefaultEditorId: (id: string | null) => void,
-  db: Database | null,
   dbKeepAlive: number,
-  setDbKeepAlive: (val: number) => void
+  setDbKeepAlive: (val: number) => void,
+  newEditorName: string,
+  setNewEditorName: (val: string) => void,
+  newEditorCmd: string,
+  setNewEditorCmd: (val: string) => void,
+  handleAddEditor: () => Promise<void>,
+  handleRemoveEditor: (id: string) => Promise<void>,
+  handleSetDefault: (id: string) => Promise<void>
 }) => {
-  const [newEditorName, setNewEditorName] = useState("");
-  const [newEditorCmd, setNewEditorCmd] = useState("");
-
-  const handleAddEditor = async () => {
-    if (!newEditorName || !newEditorCmd || !db) return;
-    const newEditor: TextEditor = {
-      id: crypto.randomUUID(),
-      name: newEditorName,
-      command: newEditorCmd
-    };
-    const updated = [...editors, newEditor];
-    setEditors(updated);
-    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('editors', $1)", [JSON.stringify(updated)]);
-    if (!defaultEditorId) {
-      setDefaultEditorId(newEditor.id);
-      await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_editor_id', $1)", [newEditor.id]);
-    }
-    setNewEditorName("");
-    setNewEditorCmd("");
-  };
-
-  const handleRemoveEditor = async (id: string) => {
-    if (!db) return;
-    const updated = editors.filter(e => e.id !== id);
-    setEditors(updated);
-    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('editors', $1)", [JSON.stringify(updated)]);
-    if (defaultEditorId === id) {
-      const newDefault = updated.length > 0 ? updated[0].id : null;
-      setDefaultEditorId(newDefault);
-      if (newDefault) {
-        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_editor_id', $1)", [newDefault]);
-      } else {
-        await db.execute("DELETE FROM settings WHERE key = 'default_editor_id'");
-      }
-    }
-  };
-
-  const handleSetDefault = async (id: string) => {
-    if (!db) return;
-    setDefaultEditorId(id);
-    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_editor_id', $1)", [id]);
-  };
-
   const handleCheckForUpdates = async () => {
     try {
       const update = await check();
@@ -522,6 +483,48 @@ function App() {
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null);
   const [dbKeepAlive, setDbKeepAlive] = useState(10);
   const [loaded, setLoaded] = useState(false);
+  const [newEditorName, setNewEditorName] = useState("");
+  const [newEditorCmd, setNewEditorCmd] = useState("");
+
+  const handleAddEditor = async () => {
+    if (!newEditorName || !newEditorCmd || !db) return;
+    const newEditor: TextEditor = {
+      id: crypto.randomUUID(),
+      name: newEditorName,
+      command: newEditorCmd
+    };
+    const updated = [...editors, newEditor];
+    setEditors(updated);
+    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('editors', $1)", [JSON.stringify(updated)]);
+    if (!defaultEditorId) {
+      setDefaultEditorId(newEditor.id);
+      await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_editor_id', $1)", [newEditor.id]);
+    }
+    setNewEditorName("");
+    setNewEditorCmd("");
+  };
+
+  const handleRemoveEditor = async (id: string) => {
+    if (!db) return;
+    const updated = editors.filter(e => e.id !== id);
+    setEditors(updated);
+    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('editors', $1)", [JSON.stringify(updated)]);
+    if (defaultEditorId === id) {
+      const newDefault = updated.length > 0 ? updated[0].id : null;
+      setDefaultEditorId(newDefault);
+      if (newDefault) {
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_editor_id', $1)", [newDefault]);
+      } else {
+        await db.execute("DELETE FROM settings WHERE key = 'default_editor_id'");
+      }
+    }
+  };
+
+  const handleSetDefault = async (id: string) => {
+    if (!db) return;
+    setDefaultEditorId(id);
+    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_editor_id', $1)", [id]);
+  };
 
   useEffect(() => {
     async function loadProjectInfo() {
@@ -879,6 +882,53 @@ function App() {
             )}
 
             {ftueStep === 4 && (
+              <div className="space-y-4 py-4">
+                <h2 className="card-title text-2xl font-bold text-base-content">Text Editors</h2>
+                <p className="text-sm opacity-60 m-0 text-base-content">Add your favorite editors to quickly open projects.</p>
+
+                <div className="flex flex-col gap-2">
+                  <input type="text" placeholder="Editor Name (e.g. VSCode)" className="input input-sm input-bordered w-full" value={newEditorName} onChange={e => setNewEditorName(e.target.value)} />
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="Command (e.g. code)" className="input input-sm input-bordered flex-1" value={newEditorCmd} onChange={e => setNewEditorCmd(e.target.value)} />
+                    <button className="btn btn-sm btn-primary px-4" onClick={handleAddEditor} disabled={!newEditorName || !newEditorCmd}>Add</button>
+                  </div>
+                </div>
+
+                {editors.length > 0 && (
+                  <div className="bg-base-200 rounded-lg overflow-hidden border border-base-300">
+                    <table className="table table-xs w-full">
+                      <thead>
+                        <tr>
+                          <th>Def.</th>
+                          <th>Name</th>
+                          <th className="text-right"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {editors.map(ed => (
+                          <tr key={ed.id}>
+                            <td>
+                              <input type="radio" className="radio radio-primary radio-xs" checked={defaultEditorId === ed.id} onChange={() => handleSetDefault(ed.id)} />
+                            </td>
+                            <td className="font-semibold truncate max-w-[100px]">{ed.name}</td>
+                            <td className="text-right">
+                              <button className="btn btn-ghost btn-xs text-error p-0 h-4 min-h-0" onClick={() => handleRemoveEditor(ed.id)}>Remove</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <div className="card-actions justify-end pt-4">
+                  <button className="btn btn-ghost text-base-content" onClick={() => setFtueStep(3)}>Back</button>
+                  <button className="btn btn-primary px-8" onClick={() => setFtueStep(5)}>Next</button>
+                </div>
+              </div>
+            )}
+
+            {ftueStep === 5 && (
               <div className="space-y-6 text-center py-4">
                 <div className="text-5xl mb-4">✨</div>
                 <h2 className="card-title text-3xl font-bold justify-center text-base-content">You're all set!</h2>
@@ -1010,7 +1060,26 @@ function App() {
             <Projects projects={projects} activeProject={activeProject} createProject={createProject} switchProject={switchProject} openProjectFolder={openProjectFolder} deleteProject={deleteProject} projectsRootPath={projectsRootPath} saveProjectsRoot={saveProjectsRoot} syncAutoDiscoveredProjects={syncAutoDiscoveredProjects} db={db} />
           </div>
           <div className={`${view === 'settings' ? 'block' : 'hidden'}`}>
-            <Settings tempName={tempName} setTempName={setTempName} tempTheme={tempTheme} setTempTheme={setTempTheme} setTheme={setTheme} DAISY_THEMES={DAISY_THEMES} setName={setName} editors={editors} setEditors={setEditors} defaultEditorId={defaultEditorId} setDefaultEditorId={setDefaultEditorId} db={db} dbKeepAlive={dbKeepAlive} setDbKeepAlive={setDbKeepAlive} />
+            <Settings
+              tempName={tempName}
+              setTempName={setTempName}
+              tempTheme={tempTheme}
+              setTempTheme={setTempTheme}
+              setTheme={setTheme}
+              DAISY_THEMES={DAISY_THEMES}
+              setName={setName}
+              editors={editors}
+              defaultEditorId={defaultEditorId}
+              dbKeepAlive={dbKeepAlive}
+              setDbKeepAlive={setDbKeepAlive}
+              newEditorName={newEditorName}
+              setNewEditorName={setNewEditorName}
+              newEditorCmd={newEditorCmd}
+              setNewEditorCmd={setNewEditorCmd}
+              handleAddEditor={handleAddEditor}
+              handleRemoveEditor={handleRemoveEditor}
+              handleSetDefault={handleSetDefault}
+            />
           </div>
           <div className={`h-full ${view === 'tools' ? 'block' : 'hidden'}`}>
             <Tools />
