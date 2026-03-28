@@ -10,8 +10,8 @@ mod tests {
     }
 
     // ─── detect_and_save_project_info ──────────────────
-    #[test]
-    fn test_detect_laravel_project() {
+    #[tokio::test]
+    async fn test_detect_laravel_project() {
         let dir = setup_temp_dir();
         let path = dir.path();
 
@@ -19,7 +19,7 @@ mod tests {
         fs::write(path.join("artisan"), "#!/usr/bin/env php").unwrap();
         fs::write(path.join("composer.json"), "{}").unwrap();
 
-        let result = detect_and_save_project_info(path.to_string_lossy().to_string());
+        let result = detect_and_save_project_info(path.to_string_lossy().to_string()).await;
         assert!(result.is_ok());
 
         let info = result.unwrap();
@@ -33,80 +33,80 @@ mod tests {
         assert!(info_path.exists());
     }
 
-    #[test]
-    fn test_detect_unknown_project() {
+    #[tokio::test]
+    async fn test_detect_unknown_project() {
         let dir = setup_temp_dir();
         let path = dir.path();
 
-        let result = detect_and_save_project_info(path.to_string_lossy().to_string());
+        let result = detect_and_save_project_info(path.to_string_lossy().to_string()).await;
         assert!(result.is_ok());
 
         let info = result.unwrap();
         assert_eq!(info.project_type, "Unknown");
     }
 
-    #[test]
-    fn test_detect_partial_laravel_only_artisan() {
+    #[tokio::test]
+    async fn test_detect_partial_laravel_only_artisan() {
         let dir = setup_temp_dir();
         let path = dir.path();
 
         // Only artisan, no composer.json → not Laravel
         fs::write(path.join("artisan"), "#!/usr/bin/env php").unwrap();
 
-        let result = detect_and_save_project_info(path.to_string_lossy().to_string());
+        let result = detect_and_save_project_info(path.to_string_lossy().to_string()).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().project_type, "Unknown");
     }
 
-    #[test]
-    fn test_detect_partial_laravel_only_composer() {
+    #[tokio::test]
+    async fn test_detect_partial_laravel_only_composer() {
         let dir = setup_temp_dir();
         let path = dir.path();
 
         // Only composer.json, no artisan → not Laravel
         fs::write(path.join("composer.json"), "{}").unwrap();
 
-        let result = detect_and_save_project_info(path.to_string_lossy().to_string());
+        let result = detect_and_save_project_info(path.to_string_lossy().to_string()).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().project_type, "Unknown");
     }
 
     // ─── get_project_info ──────────────────────────────
-    #[test]
-    fn test_get_project_info_exists() {
+    #[tokio::test]
+    async fn test_get_project_info_exists() {
         let dir = setup_temp_dir();
         let path = dir.path();
 
         // First detect → creates the file
-        detect_and_save_project_info(path.to_string_lossy().to_string()).unwrap();
+        detect_and_save_project_info(path.to_string_lossy().to_string()).await.unwrap();
 
-        let result = get_project_info(path.to_string_lossy().to_string());
+        let result = get_project_info(path.to_string_lossy().to_string()).await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_some());
     }
 
-    #[test]
-    fn test_get_project_info_not_exists() {
+    #[tokio::test]
+    async fn test_get_project_info_not_exists() {
         let dir = setup_temp_dir();
-        let result = get_project_info(dir.path().to_string_lossy().to_string());
+        let result = get_project_info(dir.path().to_string_lossy().to_string()).await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
     }
 
-    #[test]
-    fn test_get_project_info_corrupted_file() {
+    #[tokio::test]
+    async fn test_get_project_info_corrupted_file() {
         let dir = setup_temp_dir();
         let path = dir.path();
 
         fs::write(path.join(".workshop.json"), "not valid json at all").unwrap();
 
-        let result = get_project_info(path.to_string_lossy().to_string());
+        let result = get_project_info(path.to_string_lossy().to_string()).await;
         assert!(result.is_err()); // Should fail to parse
     }
 
     // ─── save_query / get_saved_queries ────────────────
-    #[test]
-    fn test_save_and_get_query() {
+    #[tokio::test]
+    async fn test_save_and_get_query() {
         let dir = setup_temp_dir();
         let path = dir.path().to_string_lossy().to_string();
 
@@ -116,16 +116,17 @@ mod tests {
             "users".to_string(),
             "SELECT * FROM users".to_string(),
         )
+        .await
         .unwrap();
 
-        let queries = get_saved_queries(path).unwrap();
+        let queries = get_saved_queries(path).await.unwrap();
         assert_eq!(queries.len(), 1);
         assert_eq!(queries[0].name, "users");
         assert_eq!(queries[0].sql, "SELECT * FROM users");
     }
 
-    #[test]
-    fn test_save_query_replaces_existing() {
+    #[tokio::test]
+    async fn test_save_query_replaces_existing() {
         let dir = setup_temp_dir();
         let path = dir.path().to_string_lossy().to_string();
 
@@ -134,53 +135,55 @@ mod tests {
             "users".to_string(),
             "SELECT * FROM users".to_string(),
         )
+        .await
         .unwrap();
         save_query(
             path.clone(),
             "users".to_string(),
             "SELECT id FROM users".to_string(),
         )
+        .await
         .unwrap();
 
-        let queries = get_saved_queries(path).unwrap();
+        let queries = get_saved_queries(path).await.unwrap();
         assert_eq!(queries.len(), 1);
         assert_eq!(queries[0].sql, "SELECT id FROM users");
     }
 
-    #[test]
-    fn test_save_multiple_queries() {
+    #[tokio::test]
+    async fn test_save_multiple_queries() {
         let dir = setup_temp_dir();
         let path = dir.path().to_string_lossy().to_string();
 
-        save_query(path.clone(), "q1".to_string(), "SELECT 1".to_string()).unwrap();
-        save_query(path.clone(), "q2".to_string(), "SELECT 2".to_string()).unwrap();
-        save_query(path.clone(), "q3".to_string(), "SELECT 3".to_string()).unwrap();
+        save_query(path.clone(), "q1".to_string(), "SELECT 1".to_string()).await.unwrap();
+        save_query(path.clone(), "q2".to_string(), "SELECT 2".to_string()).await.unwrap();
+        save_query(path.clone(), "q3".to_string(), "SELECT 3".to_string()).await.unwrap();
 
-        let queries = get_saved_queries(path).unwrap();
+        let queries = get_saved_queries(path).await.unwrap();
         assert_eq!(queries.len(), 3);
     }
 
-    #[test]
-    fn test_get_saved_queries_no_file() {
+    #[tokio::test]
+    async fn test_get_saved_queries_no_file() {
         let dir = setup_temp_dir();
-        let queries = get_saved_queries(dir.path().to_string_lossy().to_string()).unwrap();
+        let queries = get_saved_queries(dir.path().to_string_lossy().to_string()).await.unwrap();
         assert!(queries.is_empty());
     }
 
-    #[test]
-    fn test_get_saved_queries_corrupted_file() {
+    #[tokio::test]
+    async fn test_get_saved_queries_corrupted_file() {
         let dir = setup_temp_dir();
         let path = dir.path();
 
         fs::write(path.join(".workshop.json"), "garbage data").unwrap();
 
-        let queries = get_saved_queries(path.to_string_lossy().to_string()).unwrap();
+        let queries = get_saved_queries(path.to_string_lossy().to_string()).await.unwrap();
         assert!(queries.is_empty()); // Gracefully returns empty
     }
 
     // ─── save_custom_db_config ─────────────────────────
-    #[test]
-    fn test_save_custom_db_config() {
+    #[tokio::test]
+    async fn test_save_custom_db_config() {
         let dir = setup_temp_dir();
         let path = dir.path().to_string_lossy().to_string();
 
@@ -193,9 +196,9 @@ mod tests {
             password: Some("secret".to_string()),
         };
 
-        save_custom_db_config(path.clone(), Some(config)).unwrap();
+        save_custom_db_config(path.clone(), Some(config)).await.unwrap();
 
-        let info = get_project_info(path).unwrap().unwrap();
+        let info = get_project_info(path).await.unwrap().unwrap();
         assert!(info.db_config.is_some());
         let db = info.db_config.unwrap();
         assert_eq!(db.connection, "mysql");
@@ -203,8 +206,8 @@ mod tests {
         assert_eq!(db.host.unwrap(), "127.0.0.1");
     }
 
-    #[test]
-    fn test_save_custom_db_config_clears_config() {
+    #[tokio::test]
+    async fn test_save_custom_db_config_clears_config() {
         let dir = setup_temp_dir();
         let path = dir.path().to_string_lossy().to_string();
 
@@ -217,20 +220,20 @@ mod tests {
             password: None,
         };
 
-        save_custom_db_config(path.clone(), Some(config)).unwrap();
-        save_custom_db_config(path.clone(), None).unwrap();
+        save_custom_db_config(path.clone(), Some(config)).await.unwrap();
+        save_custom_db_config(path.clone(), None).await.unwrap();
 
-        let info = get_project_info(path).unwrap().unwrap();
+        let info = get_project_info(path).await.unwrap().unwrap();
         assert!(info.db_config.is_none());
     }
 
-    #[test]
-    fn test_save_db_config_preserves_saved_queries() {
+    #[tokio::test]
+    async fn test_save_db_config_preserves_saved_queries() {
         let dir = setup_temp_dir();
         let path = dir.path().to_string_lossy().to_string();
 
         // First save a query
-        save_query(path.clone(), "q1".to_string(), "SELECT 1".to_string()).unwrap();
+        save_query(path.clone(), "q1".to_string(), "SELECT 1".to_string()).await.unwrap();
 
         // Then save a db config
         let config = DbConfig {
@@ -241,36 +244,36 @@ mod tests {
             username: None,
             password: None,
         };
-        save_custom_db_config(path.clone(), Some(config)).unwrap();
+        save_custom_db_config(path.clone(), Some(config)).await.unwrap();
 
         // Saved queries should still be there
-        let queries = get_saved_queries(path).unwrap();
+        let queries = get_saved_queries(path).await.unwrap();
         assert_eq!(queries.len(), 1);
         assert_eq!(queries[0].name, "q1");
     }
 
     // ─── remove_project_info ───────────────────────────
-    #[test]
-    fn test_remove_project_info() {
+    #[tokio::test]
+    async fn test_remove_project_info() {
         let dir = setup_temp_dir();
         let path = dir.path().to_string_lossy().to_string();
 
-        detect_and_save_project_info(path.clone()).unwrap();
+        detect_and_save_project_info(path.clone()).await.unwrap();
 
         // File exists
         assert!(dir.path().join(".workshop.json").exists());
 
-        remove_project_info(path.clone()).unwrap();
+        remove_project_info(path.clone()).await.unwrap();
 
         // File removed
         assert!(!dir.path().join(".workshop.json").exists());
     }
 
-    #[test]
-    fn test_remove_project_info_no_file() {
+    #[tokio::test]
+    async fn test_remove_project_info_no_file() {
         let dir = setup_temp_dir();
         // Should not error when file doesn't exist
-        let result = remove_project_info(dir.path().to_string_lossy().to_string());
+        let result = remove_project_info(dir.path().to_string_lossy().to_string()).await;
         assert!(result.is_ok());
     }
 
