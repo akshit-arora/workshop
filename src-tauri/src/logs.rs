@@ -11,7 +11,7 @@ pub struct LogFile {
 }
 
 #[tauri::command]
-pub fn list_laravel_logs(project_path: String) -> Result<Vec<LogFile>, String> {
+pub async fn list_laravel_logs(project_path: String) -> Result<Vec<LogFile>, String> {
     let logs_dir = Path::new(&project_path).join("storage").join("logs");
 
     if !logs_dir.exists() {
@@ -50,7 +50,7 @@ pub fn list_laravel_logs(project_path: String) -> Result<Vec<LogFile>, String> {
 }
 
 #[tauri::command]
-pub fn read_laravel_log(file_path: String, last_lines: usize) -> Result<String, String> {
+pub async fn read_laravel_log(file_path: String, last_lines: usize) -> Result<String, String> {
     use std::fs::File;
     use std::io::{Read, Seek, SeekFrom};
 

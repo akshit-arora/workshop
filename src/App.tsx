@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import Database from "@tauri-apps/plugin-sql";
 import { open, ask, message } from "@tauri-apps/plugin-dialog";
@@ -233,13 +233,13 @@ const Projects = ({ projects, activeProject, createProject, switchProject, openP
             </div>
           </div>
           <div className="modal-action">
-            <form method="dialog">
-              <button className="btn btn-ghost mr-2 text-base-content">Cancel</button>
-              <button className="btn btn-primary" disabled={!projPath || !projName} onClick={() => {
-                createProject(projName, projPath, projDesc);
-                setProjName(""); setProjPath(""); setProjDesc("");
-              }}>Create Project</button>
-            </form>
+            <button className="btn btn-ghost mr-2 text-base-content" onClick={() => (document.getElementById('new_project_modal') as HTMLDialogElement)?.close()}>Cancel</button>
+            <button className="btn btn-primary" disabled={!projPath || !projName} onClick={() => {
+              const modal = document.getElementById('new_project_modal') as HTMLDialogElement;
+              if (modal) modal.close();
+              createProject(projName, projPath, projDesc);
+              setProjName(""); setProjPath(""); setProjDesc("");
+            }}>Create Project</button>
           </div>
         </div>
       </dialog>
@@ -595,7 +595,7 @@ function App() {
     }
   };
 
-  const syncAutoDiscoveredProjects = async (dbInstance: Database, rootPath: string) => {
+  const syncAutoDiscoveredProjects = useCallback(async (dbInstance: Database, rootPath: string) => {
     if (!rootPath) return;
     try {
       const entries = await readDir(rootPath);
@@ -617,7 +617,7 @@ function App() {
     } catch (err) {
       console.error("Auto-discovery failed:", err);
     }
-  };
+  }, []);
 
   // Initialize DB and load settings
   useEffect(() => {
@@ -777,19 +777,26 @@ function App() {
     setDbKeepAlive(newDbKeepAlive);
   };
 
-  const saveProjectsRoot = async (path: string) => {
+  const saveProjectsRoot = useCallback(async (path: string) => {
     if (!db) return;
     await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('projects_root_path', $1)", [path]);
     setProjectsRootPath(path);
     await syncAutoDiscoveredProjects(db, path);
-  };
+  }, [db, syncAutoDiscoveredProjects]);
 
   const handleFinishFTUE = async () => {
     await saveSettings(tempName, tempTheme, dbKeepAlive);
     setShowFTUE(false);
   };
 
-  const createProject = async (projName: string, path: string, description: string) => {
+  const switchProject = useCallback(async (project: Project) => {
+    if (!db) return;
+    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('active_project_id', $1)", [project.id.toString()]);
+    setActiveProject(project);
+    setView("dashboard");
+  }, [db]);
+
+  const createProject = useCallback(async (projName: string, path: string, description: string) => {
     if (!db) return;
     const result = await db.execute("INSERT INTO projects (name, path, description) VALUES ($1, $2, $3)", [projName, path, description]);
     const newList = await db.select<Project[]>("SELECT * FROM projects");
@@ -798,9 +805,9 @@ function App() {
       const newProj = newList.find(p => p.id === result.lastInsertId);
       if (newProj) await switchProject(newProj);
     }
-  };
+  }, [db, switchProject]);
 
-  const deleteProject = async (projectId: number) => {
+  const deleteProject = useCallback(async (projectId: number) => {
     if (!db) return;
     await db.execute("DELETE FROM projects WHERE id = $1", [projectId]);
     if (activeProject?.id === projectId) {
@@ -809,14 +816,7 @@ function App() {
     }
     const newList = await db.select<Project[]>("SELECT * FROM projects");
     setProjects(newList);
-  };
-
-  const switchProject = async (project: Project) => {
-    if (!db) return;
-    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('active_project_id', $1)", [project.id.toString()]);
-    setActiveProject(project);
-    setView("dashboard");
-  };
+  }, [db, activeProject]);
 
   const openProjectFolder = async (path: string) => {
     try {
