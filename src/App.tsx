@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import Database from "@tauri-apps/plugin-sql";
 import { open, ask, message } from "@tauri-apps/plugin-dialog";
@@ -130,7 +130,7 @@ const Projects = ({ projects, activeProject, createProject, switchProject, openP
     if (db && projectsRootPath) {
       syncAutoDiscoveredProjects(db, projectsRootPath);
     }
-  }, []);
+  }, [db, projectsRootPath, syncAutoDiscoveredProjects]);
 
   const handlePickFolder = async () => {
     const selected = await open({
@@ -233,13 +233,13 @@ const Projects = ({ projects, activeProject, createProject, switchProject, openP
             </div>
           </div>
           <div className="modal-action">
-            <form method="dialog">
-              <button className="btn btn-ghost mr-2 text-base-content">Cancel</button>
-              <button className="btn btn-primary" disabled={!projPath || !projName} onClick={() => {
-                createProject(projName, projPath, projDesc);
-                setProjName(""); setProjPath(""); setProjDesc("");
-              }}>Create Project</button>
-            </form>
+            <button className="btn btn-ghost mr-2 text-base-content" onClick={() => (document.getElementById('new_project_modal') as HTMLDialogElement)?.close()}>Cancel</button>
+            <button className="btn btn-primary" disabled={!projPath || !projName} onClick={() => {
+              const modal = document.getElementById('new_project_modal') as HTMLDialogElement;
+              if (modal) modal.close();
+              createProject(projName, projPath, projDesc);
+              setProjName(""); setProjPath(""); setProjDesc("");
+            }}>Create Project</button>
           </div>
         </div>
       </dialog>
@@ -287,70 +287,31 @@ const Projects = ({ projects, activeProject, createProject, switchProject, openP
   );
 };
 
-const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DAISY_THEMES, saveSettings, editors, setEditors, defaultEditorId, setDefaultEditorId, db, dbKeepAlive, setDbKeepAlive }: {
+const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DAISY_THEMES, setName, editors, defaultEditorId, dbKeepAlive, setDbKeepAlive, newEditorName, setNewEditorName, newEditorCmd, setNewEditorCmd, handleAddEditor, handleRemoveEditor, handleSetDefault }: {
   tempName: string,
   setTempName: (val: string) => void,
   tempTheme: string,
   setTempTheme: (val: string) => void,
   setTheme: (val: string) => void,
   DAISY_THEMES: string[],
-  saveSettings: (name: string, theme: string, dbKeepAlive: number) => Promise<void>,
+  setName: (val: string) => void,
   editors: TextEditor[],
-  setEditors: (editors: TextEditor[]) => void,
   defaultEditorId: string | null,
-  setDefaultEditorId: (id: string | null) => void,
-  db: Database | null,
   dbKeepAlive: number,
-  setDbKeepAlive: (val: number) => void
+  setDbKeepAlive: (val: number) => void,
+  newEditorName: string,
+  setNewEditorName: (val: string) => void,
+  newEditorCmd: string,
+  setNewEditorCmd: (val: string) => void,
+  handleAddEditor: () => Promise<void>,
+  handleRemoveEditor: (id: string) => Promise<void>,
+  handleSetDefault: (id: string) => Promise<void>
 }) => {
-  const [newEditorName, setNewEditorName] = useState("");
-  const [newEditorCmd, setNewEditorCmd] = useState("");
-
-  const handleAddEditor = async () => {
-    if (!newEditorName || !newEditorCmd || !db) return;
-    const newEditor: TextEditor = {
-      id: crypto.randomUUID(),
-      name: newEditorName,
-      command: newEditorCmd
-    };
-    const updated = [...editors, newEditor];
-    setEditors(updated);
-    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('editors', $1)", [JSON.stringify(updated)]);
-    if (!defaultEditorId) {
-      setDefaultEditorId(newEditor.id);
-      await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_editor_id', $1)", [newEditor.id]);
-    }
-    setNewEditorName("");
-    setNewEditorCmd("");
-  };
-
-  const handleRemoveEditor = async (id: string) => {
-    if (!db) return;
-    const updated = editors.filter(e => e.id !== id);
-    setEditors(updated);
-    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('editors', $1)", [JSON.stringify(updated)]);
-    if (defaultEditorId === id) {
-      const newDefault = updated.length > 0 ? updated[0].id : null;
-      setDefaultEditorId(newDefault);
-      if (newDefault) {
-        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_editor_id', $1)", [newDefault]);
-      } else {
-        await db.execute("DELETE FROM settings WHERE key = 'default_editor_id'");
-      }
-    }
-  };
-
-  const handleSetDefault = async (id: string) => {
-    if (!db) return;
-    setDefaultEditorId(id);
-    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_editor_id', $1)", [id]);
-  };
-
   const handleCheckForUpdates = async () => {
     try {
       const update = await check();
       if (update) {
-        const yes = await ask(`Update to version ${update.version} is available!\\n\\nDo you want to download and install it?`, {
+        const yes = await ask(`Update to version ${update.version} is available!\n\nDo you want to download and install it?`, {
           title: 'Update Available',
           kind: 'info',
         });
@@ -388,7 +349,10 @@ const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DA
                 type="text"
                 className="input input-bordered w-full"
                 value={tempName}
-                onChange={(e) => setTempName(e.target.value)}
+                onChange={(e) => {
+                  setTempName(e.target.value);
+                  setName(e.target.value);
+                }}
               />
             </div>
           </div>
@@ -405,7 +369,7 @@ const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DA
                   className={`btn btn-sm capitalize ${tempTheme === t ? 'btn-primary' : 'btn-outline'}`}
                   onClick={() => {
                     setTempTheme(t);
-                    setTheme(t); // Real-time preview
+                    setTheme(t);
                   }}
                 >
                   {t}
@@ -495,15 +459,6 @@ const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DA
             </div>
           </div>
         </div>
-
-        <div className="flex justify-end pt-4">
-          <button
-            className="btn btn-primary px-10"
-            onClick={() => saveSettings(tempName, tempTheme, dbKeepAlive)}
-          >
-            Save Changes
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -527,6 +482,50 @@ function App() {
   const [defaultEditorId, setDefaultEditorId] = useState<string | null>(null);
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null);
   const [dbKeepAlive, setDbKeepAlive] = useState(10);
+  const [loaded, setLoaded] = useState(false);
+  const [newEditorName, setNewEditorName] = useState("");
+  const [newEditorCmd, setNewEditorCmd] = useState("");
+  const initStarted = useRef(false);
+
+  const handleAddEditor = async () => {
+    if (!newEditorName || !newEditorCmd || !db) return;
+    const newEditor: TextEditor = {
+      id: crypto.randomUUID(),
+      name: newEditorName,
+      command: newEditorCmd
+    };
+    const updated = [...editors, newEditor];
+    setEditors(updated);
+    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('editors', $1)", [JSON.stringify(updated)]);
+    if (!defaultEditorId) {
+      setDefaultEditorId(newEditor.id);
+      await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_editor_id', $1)", [newEditor.id]);
+    }
+    setNewEditorName("");
+    setNewEditorCmd("");
+  };
+
+  const handleRemoveEditor = async (id: string) => {
+    if (!db) return;
+    const updated = editors.filter(e => e.id !== id);
+    setEditors(updated);
+    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('editors', $1)", [JSON.stringify(updated)]);
+    if (defaultEditorId === id) {
+      const newDefault = updated.length > 0 ? updated[0].id : null;
+      setDefaultEditorId(newDefault);
+      if (newDefault) {
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_editor_id', $1)", [newDefault]);
+      } else {
+        await db.execute("DELETE FROM settings WHERE key = 'default_editor_id'");
+      }
+    }
+  };
+
+  const handleSetDefault = async (id: string) => {
+    if (!db) return;
+    setDefaultEditorId(id);
+    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_editor_id', $1)", [id]);
+  };
 
   useEffect(() => {
     async function loadProjectInfo() {
@@ -596,17 +595,19 @@ function App() {
     }
   };
 
-  const syncAutoDiscoveredProjects = async (dbInstance: Database, rootPath: string) => {
+  const syncAutoDiscoveredProjects = useCallback(async (dbInstance: Database, rootPath: string) => {
     if (!rootPath) return;
     try {
       const entries = await readDir(rootPath);
       const subdirs = entries.filter((e: any) => e.isDirectory);
 
+      // Get all existing paths once
+      const existingProjects = await dbInstance.select<{ path: string }[]>("SELECT path FROM projects");
+      const existingPaths = new Set(existingProjects.map(p => p.path));
+
       for (const dir of subdirs) {
         const fullPath = `${rootPath}/${dir.name}`;
-        // Check if project exists
-        const existing = await dbInstance.select<any[]>("SELECT id FROM projects WHERE path = $1", [fullPath]);
-        if (existing.length === 0) {
+        if (!existingPaths.has(fullPath)) {
           await dbInstance.execute("INSERT INTO projects (name, path) VALUES ($1, $2)", [dir.name, fullPath]);
         }
       }
@@ -616,11 +617,13 @@ function App() {
     } catch (err) {
       console.error("Auto-discovery failed:", err);
     }
-  };
+  }, []);
 
   // Initialize DB and load settings
   useEffect(() => {
     async function initDb() {
+      if (initStarted.current) return;
+      initStarted.current = true;
       try {
         const _db = await Database.load("sqlite:workshop.db");
         setDb(_db);
@@ -672,7 +675,6 @@ function App() {
           }
           if (settingsMap.projects_root_path) {
             setProjectsRootPath(settingsMap.projects_root_path);
-            await syncAutoDiscoveredProjects(_db, settingsMap.projects_root_path);
           }
 
           if (settingsMap.editors) {
@@ -685,9 +687,17 @@ function App() {
             setDbKeepAlive(parseInt(settingsMap.db_keep_alive));
           }
 
-          // Load projects (again after sync)
-          const projectList = await _db.select<Project[]>("SELECT * FROM projects");
+          // Load projects (initial)
+          let projectList = await _db.select<Project[]>("SELECT * FROM projects");
           setProjects(projectList);
+
+          // Sync auto-discovered projects if root path exists
+          if (settingsMap.projects_root_path) {
+            await syncAutoDiscoveredProjects(_db, settingsMap.projects_root_path);
+            // Reload after sync
+            projectList = await _db.select<Project[]>("SELECT * FROM projects");
+            setProjects(projectList);
+          }
 
           if (settingsMap.active_project_id) {
             const activeId = parseInt(settingsMap.active_project_id);
@@ -698,9 +708,11 @@ function App() {
           setShowFTUE(true);
           setTempTheme("light");
         }
+        setLoaded(true);
       } catch (err: any) {
         console.error("DB Error:", err);
         setDbError(err.toString());
+        setLoaded(true);
       }
     }
     initDb();
@@ -725,6 +737,34 @@ function App() {
     return () => clearInterval(interval);
   }, [dbKeepAlive]);
 
+  // Auto-save settings
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (db && name && loaded) {
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('name', $1)", [name]);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [name, db, loaded]);
+
+  useEffect(() => {
+    const save = async () => {
+      if (db && theme && loaded) {
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('theme', $1)", [theme]);
+      }
+    };
+    save();
+  }, [theme, db, loaded]);
+
+  useEffect(() => {
+    const save = async () => {
+      if (db && loaded) {
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('db_keep_alive', $1)", [dbKeepAlive.toString()]);
+      }
+    };
+    save();
+  }, [dbKeepAlive, db, loaded]);
+
   const saveSettings = async (newName: string, newTheme: string, newDbKeepAlive: number) => {
     if (!db) return;
 
@@ -737,19 +777,26 @@ function App() {
     setDbKeepAlive(newDbKeepAlive);
   };
 
-  const saveProjectsRoot = async (path: string) => {
+  const saveProjectsRoot = useCallback(async (path: string) => {
     if (!db) return;
     await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('projects_root_path', $1)", [path]);
     setProjectsRootPath(path);
     await syncAutoDiscoveredProjects(db, path);
-  };
+  }, [db, syncAutoDiscoveredProjects]);
 
   const handleFinishFTUE = async () => {
     await saveSettings(tempName, tempTheme, dbKeepAlive);
     setShowFTUE(false);
   };
 
-  const createProject = async (projName: string, path: string, description: string) => {
+  const switchProject = useCallback(async (project: Project) => {
+    if (!db) return;
+    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('active_project_id', $1)", [project.id.toString()]);
+    setActiveProject(project);
+    setView("dashboard");
+  }, [db]);
+
+  const createProject = useCallback(async (projName: string, path: string, description: string) => {
     if (!db) return;
     const result = await db.execute("INSERT INTO projects (name, path, description) VALUES ($1, $2, $3)", [projName, path, description]);
     const newList = await db.select<Project[]>("SELECT * FROM projects");
@@ -758,9 +805,9 @@ function App() {
       const newProj = newList.find(p => p.id === result.lastInsertId);
       if (newProj) await switchProject(newProj);
     }
-  };
+  }, [db, switchProject]);
 
-  const deleteProject = async (projectId: number) => {
+  const deleteProject = useCallback(async (projectId: number) => {
     if (!db) return;
     await db.execute("DELETE FROM projects WHERE id = $1", [projectId]);
     if (activeProject?.id === projectId) {
@@ -769,14 +816,7 @@ function App() {
     }
     const newList = await db.select<Project[]>("SELECT * FROM projects");
     setProjects(newList);
-  };
-
-  const switchProject = async (project: Project) => {
-    if (!db) return;
-    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('active_project_id', $1)", [project.id.toString()]);
-    setActiveProject(project);
-    setView("dashboard");
-  };
+  }, [db, activeProject]);
 
   const openProjectFolder = async (path: string) => {
     try {
@@ -854,6 +894,53 @@ function App() {
             )}
 
             {ftueStep === 4 && (
+              <div className="space-y-4 py-4">
+                <h2 className="card-title text-2xl font-bold text-base-content">Text Editors</h2>
+                <p className="text-sm opacity-60 m-0 text-base-content">Add your favorite editors to quickly open projects.</p>
+
+                <div className="flex flex-col gap-2">
+                  <input type="text" placeholder="Editor Name (e.g. VSCode)" className="input input-sm input-bordered w-full" value={newEditorName} onChange={e => setNewEditorName(e.target.value)} />
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="Command (e.g. code)" className="input input-sm input-bordered flex-1" value={newEditorCmd} onChange={e => setNewEditorCmd(e.target.value)} />
+                    <button className="btn btn-sm btn-primary px-4" onClick={handleAddEditor} disabled={!newEditorName || !newEditorCmd}>Add</button>
+                  </div>
+                </div>
+
+                {editors.length > 0 && (
+                  <div className="bg-base-200 rounded-lg overflow-hidden border border-base-300">
+                    <table className="table table-xs w-full">
+                      <thead>
+                        <tr>
+                          <th>Def.</th>
+                          <th>Name</th>
+                          <th className="text-right"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {editors.map(ed => (
+                          <tr key={ed.id}>
+                            <td>
+                              <input type="radio" className="radio radio-primary radio-xs" checked={defaultEditorId === ed.id} onChange={() => handleSetDefault(ed.id)} />
+                            </td>
+                            <td className="font-semibold truncate max-w-[100px]">{ed.name}</td>
+                            <td className="text-right">
+                              <button className="btn btn-ghost btn-xs text-error p-0 h-4 min-h-0" onClick={() => handleRemoveEditor(ed.id)}>Remove</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <div className="card-actions justify-end pt-4">
+                  <button className="btn btn-ghost text-base-content" onClick={() => setFtueStep(3)}>Back</button>
+                  <button className="btn btn-primary px-8" onClick={() => setFtueStep(5)}>Next</button>
+                </div>
+              </div>
+            )}
+
+            {ftueStep === 5 && (
               <div className="space-y-6 text-center py-4">
                 <div className="text-5xl mb-4">✨</div>
                 <h2 className="card-title text-3xl font-bold justify-center text-base-content">You're all set!</h2>
@@ -985,7 +1072,26 @@ function App() {
             <Projects projects={projects} activeProject={activeProject} createProject={createProject} switchProject={switchProject} openProjectFolder={openProjectFolder} deleteProject={deleteProject} projectsRootPath={projectsRootPath} saveProjectsRoot={saveProjectsRoot} syncAutoDiscoveredProjects={syncAutoDiscoveredProjects} db={db} />
           </div>
           <div className={`${view === 'settings' ? 'block' : 'hidden'}`}>
-            <Settings tempName={tempName} setTempName={setTempName} tempTheme={tempTheme} setTempTheme={setTempTheme} setTheme={setTheme} DAISY_THEMES={DAISY_THEMES} saveSettings={saveSettings} editors={editors} setEditors={setEditors} defaultEditorId={defaultEditorId} setDefaultEditorId={setDefaultEditorId} db={db} dbKeepAlive={dbKeepAlive} setDbKeepAlive={setDbKeepAlive} />
+            <Settings
+              tempName={tempName}
+              setTempName={setTempName}
+              tempTheme={tempTheme}
+              setTempTheme={setTempTheme}
+              setTheme={setTheme}
+              DAISY_THEMES={DAISY_THEMES}
+              setName={setName}
+              editors={editors}
+              defaultEditorId={defaultEditorId}
+              dbKeepAlive={dbKeepAlive}
+              setDbKeepAlive={setDbKeepAlive}
+              newEditorName={newEditorName}
+              setNewEditorName={setNewEditorName}
+              newEditorCmd={newEditorCmd}
+              setNewEditorCmd={setNewEditorCmd}
+              handleAddEditor={handleAddEditor}
+              handleRemoveEditor={handleRemoveEditor}
+              handleSetDefault={handleSetDefault}
+            />
           </div>
           <div className={`h-full ${view === 'tools' ? 'block' : 'hidden'}`}>
             <Tools />

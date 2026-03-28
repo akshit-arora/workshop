@@ -11,42 +11,42 @@ mod tests {
     }
 
     // ─── list_laravel_logs ─────────────────────────────
-    #[test]
-    fn test_list_logs_empty_dir() {
+    #[tokio::test]
+    async fn test_list_logs_empty_dir() {
         let dir = TempDir::new().unwrap();
         let _logs_dir = setup_laravel_log_dir(dir.path());
 
-        let result = list_laravel_logs(dir.path().to_string_lossy().to_string());
+        let result = list_laravel_logs(dir.path().to_string_lossy().to_string()).await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
     }
 
-    #[test]
-    fn test_list_logs_no_storage_dir() {
+    #[tokio::test]
+    async fn test_list_logs_no_storage_dir() {
         let dir = TempDir::new().unwrap();
 
-        let result = list_laravel_logs(dir.path().to_string_lossy().to_string());
+        let result = list_laravel_logs(dir.path().to_string_lossy().to_string()).await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
     }
 
-    #[test]
-    fn test_list_logs_with_log_files() {
+    #[tokio::test]
+    async fn test_list_logs_with_log_files() {
         let dir = TempDir::new().unwrap();
         let logs_dir = setup_laravel_log_dir(dir.path());
 
         fs::write(logs_dir.join("laravel-2024-01-01.log"), "Log entry 1").unwrap();
         fs::write(logs_dir.join("laravel-2024-01-02.log"), "Log entry 2").unwrap();
 
-        let result = list_laravel_logs(dir.path().to_string_lossy().to_string());
+        let result = list_laravel_logs(dir.path().to_string_lossy().to_string()).await;
         assert!(result.is_ok());
 
         let logs = result.unwrap();
         assert_eq!(logs.len(), 2);
     }
 
-    #[test]
-    fn test_list_logs_ignores_non_log_files() {
+    #[tokio::test]
+    async fn test_list_logs_ignores_non_log_files() {
         let dir = TempDir::new().unwrap();
         let logs_dir = setup_laravel_log_dir(dir.path());
 
@@ -54,15 +54,15 @@ mod tests {
         fs::write(logs_dir.join("readme.txt"), "Not a log").unwrap();
         fs::write(logs_dir.join("data.json"), "{}").unwrap();
 
-        let result = list_laravel_logs(dir.path().to_string_lossy().to_string());
+        let result = list_laravel_logs(dir.path().to_string_lossy().to_string()).await;
         let logs = result.unwrap();
 
         assert_eq!(logs.len(), 1);
         assert_eq!(logs[0].name, "laravel.log");
     }
 
-    #[test]
-    fn test_list_logs_sorted_by_modified_desc() {
+    #[tokio::test]
+    async fn test_list_logs_sorted_by_modified_desc() {
         let dir = TempDir::new().unwrap();
         let logs_dir = setup_laravel_log_dir(dir.path());
 
@@ -71,41 +71,41 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(50));
         fs::write(logs_dir.join("new.log"), "new content").unwrap();
 
-        let logs = list_laravel_logs(dir.path().to_string_lossy().to_string()).unwrap();
+        let logs = list_laravel_logs(dir.path().to_string_lossy().to_string()).await.unwrap();
         assert_eq!(logs.len(), 2);
 
         // Newest should be first
         assert!(logs[0].last_modified >= logs[1].last_modified);
     }
 
-    #[test]
-    fn test_list_logs_file_size() {
+    #[tokio::test]
+    async fn test_list_logs_file_size() {
         let dir = TempDir::new().unwrap();
         let logs_dir = setup_laravel_log_dir(dir.path());
 
         let content = "This is a test log entry with some content\n";
         fs::write(logs_dir.join("test.log"), content).unwrap();
 
-        let logs = list_laravel_logs(dir.path().to_string_lossy().to_string()).unwrap();
+        let logs = list_laravel_logs(dir.path().to_string_lossy().to_string()).await.unwrap();
         assert_eq!(logs[0].size, content.len() as u64);
     }
 
     // ─── read_laravel_log ──────────────────────────────
-    #[test]
-    fn test_read_log_full_content() {
+    #[tokio::test]
+    async fn test_read_log_full_content() {
         let dir = TempDir::new().unwrap();
         let log_path = dir.path().join("test.log");
 
         let content = "[2024-01-01 12:00:00] local.ERROR: Something went wrong\nStack trace here\n[2024-01-01 12:01:00] local.INFO: All good\n";
         fs::write(&log_path, content).unwrap();
 
-        let result = read_laravel_log(log_path.to_string_lossy().to_string(), 100);
+        let result = read_laravel_log(log_path.to_string_lossy().to_string(), 100).await;
         assert!(result.is_ok());
         assert!(result.unwrap().contains("Something went wrong"));
     }
 
-    #[test]
-    fn test_read_log_last_lines() {
+    #[tokio::test]
+    async fn test_read_log_last_lines() {
         let dir = TempDir::new().unwrap();
         let log_path = dir.path().join("test.log");
 
@@ -115,7 +115,7 @@ mod tests {
         }
         fs::write(&log_path, content).unwrap();
 
-        let result = read_laravel_log(log_path.to_string_lossy().to_string(), 5);
+        let result = read_laravel_log(log_path.to_string_lossy().to_string(), 5).await;
         assert!(result.is_ok());
 
         let output = result.unwrap();
@@ -124,44 +124,44 @@ mod tests {
         assert!(lines.len() <= 6); // a bit of slack for the seeking logic
     }
 
-    #[test]
-    fn test_read_log_file_not_found() {
-        let result = read_laravel_log("/nonexistent/path/to/log.log".to_string(), 10);
+    #[tokio::test]
+    async fn test_read_log_file_not_found() {
+        let result = read_laravel_log("/nonexistent/path/to/log.log".to_string(), 10).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Log file not found"));
     }
 
-    #[test]
-    fn test_read_log_empty_file() {
+    #[tokio::test]
+    async fn test_read_log_empty_file() {
         let dir = TempDir::new().unwrap();
         let log_path = dir.path().join("empty.log");
         fs::write(&log_path, "").unwrap();
 
-        let result = read_laravel_log(log_path.to_string_lossy().to_string(), 10);
+        let result = read_laravel_log(log_path.to_string_lossy().to_string(), 10).await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
     }
 
-    #[test]
-    fn test_read_log_single_line() {
+    #[tokio::test]
+    async fn test_read_log_single_line() {
         let dir = TempDir::new().unwrap();
         let log_path = dir.path().join("single.log");
         fs::write(&log_path, "[2024-01-01 12:00:00] local.ERROR: Only line").unwrap();
 
-        let result = read_laravel_log(log_path.to_string_lossy().to_string(), 10);
+        let result = read_laravel_log(log_path.to_string_lossy().to_string(), 10).await;
         assert!(result.is_ok());
 
         let output = result.unwrap();
         assert!(output.contains("Only line"));
     }
 
-    #[test]
-    fn test_read_log_fewer_lines_than_requested() {
+    #[tokio::test]
+    async fn test_read_log_fewer_lines_than_requested() {
         let dir = TempDir::new().unwrap();
         let log_path = dir.path().join("short.log");
         fs::write(&log_path, "Line 1\nLine 2\nLine 3\n").unwrap();
 
-        let result = read_laravel_log(log_path.to_string_lossy().to_string(), 100);
+        let result = read_laravel_log(log_path.to_string_lossy().to_string(), 100).await;
         assert!(result.is_ok());
 
         let output = result.unwrap();

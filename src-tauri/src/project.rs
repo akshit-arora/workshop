@@ -22,7 +22,7 @@ struct ArtisanList {
 }
 
 #[tauri::command]
-pub fn get_artisan_commands(path: String) -> Result<Vec<ArtisanCommand>, String> {
+pub async fn get_artisan_commands(path: String) -> Result<Vec<ArtisanCommand>, String> {
     let project_path = Path::new(&path);
     if !project_path.join("artisan").exists() {
         return Err("Not a Laravel project (artisan not found)".to_string());
@@ -71,7 +71,7 @@ pub struct ProjectInfo {
 const INFO_FILE: &str = ".workshop.json";
 
 #[tauri::command]
-pub fn save_custom_db_config(path: String, config: Option<DbConfig>) -> Result<(), String> {
+pub async fn save_custom_db_config(path: String, config: Option<DbConfig>) -> Result<(), String> {
     let project_path = Path::new(&path);
     let info_path = project_path.join(INFO_FILE);
 
@@ -91,7 +91,7 @@ pub fn save_custom_db_config(path: String, config: Option<DbConfig>) -> Result<(
 }
 
 #[tauri::command]
-pub fn get_saved_queries(path: String) -> Result<Vec<SavedQuery>, String> {
+pub async fn get_saved_queries(path: String) -> Result<Vec<SavedQuery>, String> {
     let info_path = Path::new(&path).join(INFO_FILE);
     if info_path.exists() {
         let content = fs::read_to_string(info_path).map_err(|e| e.to_string())?;
@@ -106,7 +106,7 @@ pub fn get_saved_queries(path: String) -> Result<Vec<SavedQuery>, String> {
 }
 
 #[tauri::command]
-pub fn save_query(path: String, name: String, sql: String) -> Result<(), String> {
+pub async fn save_query(path: String, name: String, sql: String) -> Result<(), String> {
     let project_path = Path::new(&path);
     let info_path = project_path.join(INFO_FILE);
 
@@ -128,7 +128,7 @@ pub fn save_query(path: String, name: String, sql: String) -> Result<(), String>
 }
 
 #[tauri::command]
-pub fn get_project_info(path: String) -> Result<Option<ProjectInfo>, String> {
+pub async fn get_project_info(path: String) -> Result<Option<ProjectInfo>, String> {
     let info_path = Path::new(&path).join(INFO_FILE);
     if info_path.exists() {
         let content = fs::read_to_string(info_path).map_err(|e| e.to_string())?;
@@ -140,7 +140,7 @@ pub fn get_project_info(path: String) -> Result<Option<ProjectInfo>, String> {
 }
 
 #[tauri::command]
-pub fn detect_and_save_project_info(path: String) -> Result<ProjectInfo, String> {
+pub async fn detect_and_save_project_info(path: String) -> Result<ProjectInfo, String> {
     let project_path = Path::new(&path);
 
     // Check if it's a Laravel project
@@ -171,7 +171,7 @@ pub fn detect_and_save_project_info(path: String) -> Result<ProjectInfo, String>
 }
 
 #[tauri::command]
-pub fn remove_project_info(path: String) -> Result<(), String> {
+pub async fn remove_project_info(path: String) -> Result<(), String> {
     let info_path = Path::new(&path).join(INFO_FILE);
     if info_path.exists() {
         fs::remove_file(info_path).map_err(|e| e.to_string())?;
