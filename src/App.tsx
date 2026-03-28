@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import Database from "@tauri-apps/plugin-sql";
 import { open, ask, message } from "@tauri-apps/plugin-dialog";
@@ -130,7 +130,7 @@ const Projects = ({ projects, activeProject, createProject, switchProject, openP
     if (db && projectsRootPath) {
       syncAutoDiscoveredProjects(db, projectsRootPath);
     }
-  }, []);
+  }, [db, projectsRootPath, syncAutoDiscoveredProjects]);
 
   const handlePickFolder = async () => {
     const selected = await open({
@@ -485,6 +485,7 @@ function App() {
   const [loaded, setLoaded] = useState(false);
   const [newEditorName, setNewEditorName] = useState("");
   const [newEditorCmd, setNewEditorCmd] = useState("");
+  const initStarted = useRef(false);
 
   const handleAddEditor = async () => {
     if (!newEditorName || !newEditorCmd || !db) return;
@@ -600,11 +601,13 @@ function App() {
       const entries = await readDir(rootPath);
       const subdirs = entries.filter((e: any) => e.isDirectory);
 
+      // Get all existing paths once
+      const existingProjects = await dbInstance.select<{ path: string }[]>("SELECT path FROM projects");
+      const existingPaths = new Set(existingProjects.map(p => p.path));
+
       for (const dir of subdirs) {
         const fullPath = `${rootPath}/${dir.name}`;
-        // Check if project exists
-        const existing = await dbInstance.select<any[]>("SELECT id FROM projects WHERE path = $1", [fullPath]);
-        if (existing.length === 0) {
+        if (!existingPaths.has(fullPath)) {
           await dbInstance.execute("INSERT INTO projects (name, path) VALUES ($1, $2)", [dir.name, fullPath]);
         }
       }
@@ -619,6 +622,8 @@ function App() {
   // Initialize DB and load settings
   useEffect(() => {
     async function initDb() {
+      if (initStarted.current) return;
+      initStarted.current = true;
       try {
         const _db = await Database.load("sqlite:workshop.db");
         setDb(_db);
@@ -670,7 +675,6 @@ function App() {
           }
           if (settingsMap.projects_root_path) {
             setProjectsRootPath(settingsMap.projects_root_path);
-            await syncAutoDiscoveredProjects(_db, settingsMap.projects_root_path);
           }
 
           if (settingsMap.editors) {
@@ -683,9 +687,17 @@ function App() {
             setDbKeepAlive(parseInt(settingsMap.db_keep_alive));
           }
 
-          // Load projects (again after sync)
-          const projectList = await _db.select<Project[]>("SELECT * FROM projects");
+          // Load projects (initial)
+          let projectList = await _db.select<Project[]>("SELECT * FROM projects");
           setProjects(projectList);
+
+          // Sync auto-discovered projects if root path exists
+          if (settingsMap.projects_root_path) {
+            await syncAutoDiscoveredProjects(_db, settingsMap.projects_root_path);
+            // Reload after sync
+            projectList = await _db.select<Project[]>("SELECT * FROM projects");
+            setProjects(projectList);
+          }
 
           if (settingsMap.active_project_id) {
             const activeId = parseInt(settingsMap.active_project_id);
