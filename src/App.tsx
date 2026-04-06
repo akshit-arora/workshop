@@ -9,6 +9,7 @@ import { Terminal } from "./components/Terminal";
 import { DatabaseViewer } from "./components/DatabaseViewer";
 import { LogViewer } from "./components/LogViewer";
 import { Tools } from "./components/Tools";
+import { MermaidEditor } from "./components/MermaidEditor";
 import "./App.css";
 
 const DAISY_THEMES = [
@@ -28,9 +29,15 @@ export interface TextEditor {
   command: string;
 }
 
+interface MermaidChart {
+  name: string;
+  code: string;
+}
+
 interface ProjectInfo {
-  project_type: string;
-  detected_at: number;
+  projectType: string;
+  detectedAt: number;
+  mermaidCharts?: MermaidChart[];
 }
 
 const Dashboard = ({ name, activeProject, openProjectFolder, dbError, defaultEditor, openInEditor, projectInfo, onRemoveInfo }: {
@@ -99,7 +106,7 @@ const Dashboard = ({ name, activeProject, openProjectFolder, dbError, defaultEdi
           <div>
             <h3 className="text-sm uppercase tracking-widest font-bold opacity-50 mb-2">Project Information</h3>
             <div className="flex items-center gap-2">
-              <span className="text-2xl font-bold text-base-content">{projectInfo.project_type} Project</span>
+              <span className="text-2xl font-bold text-base-content">{projectInfo.projectType} Project</span>
             </div>
           </div>
           <button className="btn btn-ghost btn-xs text-error" onClick={onRemoveInfo}>Remove Information</button>
@@ -527,27 +534,28 @@ function App() {
     await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_editor_id', $1)", [id]);
   };
 
-  useEffect(() => {
-    async function loadProjectInfo() {
-      if (activeProject) {
-        try {
-          const info = await invoke<ProjectInfo | null>("get_project_info", { path: activeProject.path });
-          if (info) {
-            setProjectInfo(info);
-          } else {
-            // Auto detect once if not present
-            const detected = await invoke<ProjectInfo>("detect_and_save_project_info", { path: activeProject.path });
-            setProjectInfo(detected);
-          }
-        } catch (e) {
-          console.error("Failed to load project info", e);
+  const loadProjectInfo = useCallback(async () => {
+    if (activeProject) {
+      try {
+        const info = await invoke<ProjectInfo | null>("get_project_info", { path: activeProject.path });
+        if (info) {
+          setProjectInfo(info);
+        } else {
+          // Auto detect once if not present
+          const detected = await invoke<ProjectInfo>("detect_and_save_project_info", { path: activeProject.path });
+          setProjectInfo(detected);
         }
-      } else {
-        setProjectInfo(null);
+      } catch (e) {
+        console.error("Failed to load project info", e);
       }
+    } else {
+      setProjectInfo(null);
     }
-    loadProjectInfo();
   }, [activeProject]);
+
+  useEffect(() => {
+    loadProjectInfo();
+  }, [loadProjectInfo]);
 
   useEffect(() => {
     async function checkForUpdatesOnStartup() {
@@ -1043,7 +1051,7 @@ function App() {
                       Terminal
                     </a>
                   </li>
-                  {projectInfo?.project_type === "Laravel" && (
+                  {projectInfo?.projectType === "Laravel" && (
                     <li>
                       <a className={view === 'logs' ? 'active' : ''} onClick={() => setView('logs')}>
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
@@ -1051,6 +1059,12 @@ function App() {
                       </a>
                     </li>
                   )}
+                  <li>
+                    <a className={view === 'mermaid' ? 'active' : ''} onClick={() => setView('mermaid')}>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                      Mermaid Charts
+                    </a>
+                  </li>
                 </>
               )}
               <li className="menu-title text-opacity-40 uppercase text-[10px] font-bold tracking-widest mb-2 mt-4">System</li>
@@ -1101,9 +1115,18 @@ function App() {
               <DatabaseViewer projectPath={activeProject.path} keepAliveMinutes={dbKeepAlive} />
             </div>
           )}
-          {activeProject && projectInfo?.project_type === "Laravel" && (
+          {activeProject && projectInfo?.projectType === "Laravel" && (
             <div className={`h-full ${view === 'logs' ? 'block' : 'hidden'}`}>
               <LogViewer projectPath={activeProject.path} />
+            </div>
+          )}
+          {activeProject && (
+            <div className={`h-full ${view === 'mermaid' ? 'block' : 'hidden'}`}>
+              <MermaidEditor 
+                projectPath={activeProject.path} 
+                charts={projectInfo?.mermaidCharts || []} 
+                onRefresh={loadProjectInfo} 
+              />
             </div>
           )}
           {activeProject && (
@@ -1121,7 +1144,7 @@ function App() {
       <footer className="footer px-4 py-1 bg-primary text-primary-content h-7 shrink-0 text-[10px] font-bold tracking-widest flex justify-between items-center z-30 shadow-inner">
         <div className="flex items-center gap-4 text-primary-content">
           {projectInfo && (
-            <span className="opacity-90 uppercase">{projectInfo.project_type}</span>
+            <span className="opacity-90 uppercase">{projectInfo.projectType}</span>
           )}
         </div>
         <div className="flex items-center gap-3">

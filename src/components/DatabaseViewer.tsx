@@ -29,8 +29,8 @@ interface SavedQuery {
 }
 
 interface ProjectInfo {
-  project_type: string;
-  db_config?: DbConfig;
+  projectType: string;
+  dbConfig?: DbConfig;
 }
 
 const ManualConnectionForm = ({ projectPath, onConnected }: { projectPath: string, onConnected: (cfg: DbConfig) => void }) => {
@@ -332,8 +332,8 @@ export const DatabaseViewer = ({ projectPath, keepAliveMinutes }: { projectPath:
       // 2. If not Laravel, check if we have a saved manual config
       try {
         const info = await invoke<ProjectInfo | null>("get_project_info", { path: projectPath });
-        if (info && info.db_config) {
-          setConfig(info.db_config);
+        if (info && info.dbConfig) {
+          setConfig(info.dbConfig);
           setIsManualMode(false);
         } else {
           // No config found anywhere, show manual form

@@ -48,6 +48,8 @@ pub fn run() {
             project::save_query,
             project::get_artisan_commands,
             project::save_custom_db_config,
+            project::save_mermaid_chart,
+            project::delete_mermaid_chart,
             db_viewer::get_laravel_db_config,
             db_viewer::test_db_connection,
             db_viewer::list_tables,

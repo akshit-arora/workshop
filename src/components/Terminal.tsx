@@ -277,7 +277,7 @@ export const Terminal = ({ activeProject }: { activeProject: any }) => {
                 </div>
 
                 <div className="flex items-center gap-2 pr-4">
-                    {projectInfo?.project_type === "Laravel" && (
+                    {projectInfo?.projectType === "Laravel" && (
                         <ArtisanCommandSelector 
                             path={activeProject.path} 
                             onSelect={executeCommand}

@@ -1,3 +1,8 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/* Hide only the specific Mermaid error elements to avoid layout issues */
+.mermaid-err, .mermaid-error-icon, #mermaid-error-id {
+  display: none !important;
+}
+

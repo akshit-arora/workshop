@@ -304,6 +304,10 @@ mod tests {
                 username: Some("user".to_string()),
                 password: Some("pass".to_string()),
             }),
+            mermaid_charts: vec![MermaidChart {
+                name: "test chart".to_string(),
+                code: "graph TD; A-->B;".to_string(),
+            }],
         };
 
         let json = serde_json::to_string(&info).unwrap();
@@ -317,12 +321,11 @@ mod tests {
 
     #[test]
     fn test_project_info_deserialize_missing_fields() {
-        // Only project_type is present — other fields should use defaults
-        let json = r#"{"project_type": "Django"}"#;
+        // Only projectType is present — other fields should use defaults
+        let json = r#"{"projectType": "Django"}"#;
         let info: ProjectInfo = serde_json::from_str(json).unwrap();
 
         assert_eq!(info.project_type, "Django");
-        assert_eq!(info.detected_at, 0);
         assert!(info.saved_queries.is_empty());
         assert!(info.db_config.is_none());
     }

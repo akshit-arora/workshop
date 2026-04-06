@@ -4,6 +4,7 @@ use std::path::Path;
 use std::time::SystemTime;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct SavedQuery {
     pub name: String,
     pub sql: String,
@@ -47,6 +48,7 @@ pub async fn get_artisan_commands(path: String) -> Result<Vec<ArtisanCommand>, S
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct DbConfig {
     pub connection: String,
     pub host: Option<String>,
@@ -56,7 +58,15 @@ pub struct DbConfig {
     pub password: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MermaidChart {
+    pub name: String,
+    pub code: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectInfo {
     #[serde(default)]
     pub project_type: String,
@@ -66,9 +76,53 @@ pub struct ProjectInfo {
     pub saved_queries: Vec<SavedQuery>,
     #[serde(default)]
     pub db_config: Option<DbConfig>,
+    #[serde(default)]
+    pub mermaid_charts: Vec<MermaidChart>,
 }
 
 const INFO_FILE: &str = ".workshop.json";
+
+#[tauri::command]
+pub async fn save_mermaid_chart(path: String, name: String, code: String) -> Result<(), String> {
+    let project_path = Path::new(&path);
+    let info_path = project_path.join(INFO_FILE);
+
+    let mut info = if info_path.exists() {
+        let content = fs::read_to_string(&info_path).map_err(|e| e.to_string())?;
+        serde_json::from_str::<ProjectInfo>(&content).unwrap_or_default()
+    } else {
+        ProjectInfo::default()
+    };
+
+    // Remove if already exists with same name
+    info.mermaid_charts.retain(|c| c.name != name);
+    info.mermaid_charts.push(MermaidChart { name, code });
+
+    let content = serde_json::to_string_pretty(&info).map_err(|e| e.to_string())?;
+    fs::write(info_path, content).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_mermaid_chart(path: String, name: String) -> Result<(), String> {
+    let project_path = Path::new(&path);
+    let info_path = project_path.join(INFO_FILE);
+
+    if !info_path.exists() {
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(&info_path).map_err(|e| e.to_string())?;
+    let mut info: ProjectInfo = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+
+    info.mermaid_charts.retain(|c| c.name != name);
+
+    let content = serde_json::to_string_pretty(&info).map_err(|e| e.to_string())?;
+    fs::write(info_path, content).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn save_custom_db_config(path: String, config: Option<DbConfig>) -> Result<(), String> {
@@ -161,6 +215,7 @@ pub async fn detect_and_save_project_info(path: String) -> Result<ProjectInfo, S
             .as_secs(),
         saved_queries: Vec::new(),
         db_config: None,
+        mermaid_charts: Vec::new(),
     };
 
     let info_path = project_path.join(INFO_FILE);
