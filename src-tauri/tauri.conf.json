@@ -31,21 +31,14 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "macos": {
-      "frameworks": [],
-      "minimumSystemVersion": "10.13",
-      "exceptionDomain": "",
-      "signingIdentity": null,
-      "entitlements": null
-    }
+    ]
   },
   "plugins": {
     "updater": {
       "endpoints": [
         "https://github.com/akshit-arora/workshop/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhBQUNEQUNGMzg3OTg2MjcKUldRbmhuazR6OXFzaXE3VWphVE9OU2ZiUFRKMjBZcm44SHk0eFE0Q0tyQjBROVhWc0d4eFNkZlMK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZBNUE1MkI3QzI5NjlGN0MKUldSOG41YkN0MUphK2g1V1hZMHdXb3hmVXA3Y1Z0MVMrb2JnSERNbTZvTFNVTWZhLy9kT1F0ZnAK"
     }
   }
 }
