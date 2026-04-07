@@ -14,8 +14,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: "macos-13"
-            args: "--target universal-apple-darwin --verbose"
+          - platform: "macos-latest"
+            args: "--target universal-apple-darwin"
           - platform: "ubuntu-22.04"
             args: ""
           - platform: "windows-latest"
@@ -34,7 +34,13 @@ jobs:
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
+          # Target both architectures for macOS universal builds
           targets: ${{ contains(matrix.platform, 'macos') && 'x86_64-apple-darwin,aarch64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
 
       - name: install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
@@ -49,7 +55,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version
+          tagName: v__VERSION__ # the action automatically replaces __VERSION__ with the app version
           releaseName: "Workshop v__VERSION__"
           releaseBody: "See the assets below to download the latest version of Workshop."
           releaseDraft: true
