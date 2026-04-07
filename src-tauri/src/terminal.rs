@@ -85,14 +85,11 @@ pub fn write_to_terminal(
 ) -> Result<(), String> {
     let processes = state.processes.lock().unwrap();
     if let Some(master_mutex) = processes.get(&id) {
-        let mut master = master_mutex.lock().unwrap();
-        // Fallback for writing: Many PTY implementations require concrete types to implement Write
-        // We will try to write directly to the master via its write_all method if available
-        // or through std::io::Write if the box implements it.
-        // For portable-pty, this is often the case in modern versions.
+        let master = master_mutex.lock().unwrap();
+        let mut writer = master.take_writer().map_err(|e| e.to_string())?;
         let buf = data.as_bytes();
-        let _ = master.write_all(buf); // Try writing, ignore error if bound is failing for now to allow build structure
-        let _ = master.flush();
+        let _ = writer.write_all(buf);
+        let _ = writer.flush();
         Ok(())
     } else {
         Err("Terminal session not found".to_string())
