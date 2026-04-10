@@ -25,6 +25,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -36,7 +37,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/akshit-arora/workshop/releases/latest/download/latest.json"
+        "https://github.com/akshit-arora/workshop/releases/download/v__VERSION__/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZBNUE1MkI3QzI5NjlGN0MKUldSOG41YkN0MUphK2g1V1hZMHdXb3hmVXA3Y1Z0MVMrb2JnSERNbTZvTFNVTWZhLy9kT1F0ZnAK"
     }
