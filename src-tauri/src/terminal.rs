@@ -5,14 +5,19 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Emitter, Runtime};
 
+pub struct TerminalSession {
+    pub master: Box<dyn MasterPty + Send>,
+    pub writer: Box<dyn Write + Send>,
+}
+
 pub struct TerminalState {
-    pub processes: Arc<Mutex<HashMap<String, Arc<Mutex<Box<dyn MasterPty + Send>>>>>>,
+    pub sessions: Arc<Mutex<HashMap<String, Arc<Mutex<TerminalSession>>>>>,
 }
 
 impl Default for TerminalState {
     fn default() -> Self {
         Self {
-            processes: Arc::new(Mutex::new(HashMap::new())),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -25,7 +30,6 @@ pub async fn create_terminal<R: Runtime>(
     cwd: String,
 ) -> Result<u32, String> {
     let pty_system = native_pty_system();
-    // Use openpty for compatibility with older portable-pty versions if needed
     let pair = pty_system
         .openpty(PtySize {
             rows: 24,
@@ -46,12 +50,23 @@ pub async fn create_terminal<R: Runtime>(
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     let pid = child.process_id().unwrap_or(0);
 
+    // Important: Drop the slave handle in the parent process 
+    // so that EOF can be correctly detected when the child exits.
+    drop(pair.slave);
+
     let master = pair.master;
     let mut reader = master.try_clone_reader().map_err(|e| e.to_string())?;
+    let writer = master.take_writer().map_err(|e| e.to_string())?;
 
     {
-        let mut processes = state.processes.lock().unwrap();
-        processes.insert(id.clone(), Arc::new(Mutex::new(master)));
+        let mut sessions = state.sessions.lock().unwrap();
+        sessions.insert(
+            id.clone(),
+            Arc::new(Mutex::new(TerminalSession {
+                master,
+                writer,
+            })),
+        );
     }
 
     let app_clone = app;
@@ -83,13 +98,12 @@ pub fn write_to_terminal(
     id: String,
     data: String,
 ) -> Result<(), String> {
-    let processes = state.processes.lock().unwrap();
-    if let Some(master_mutex) = processes.get(&id) {
-        let master = master_mutex.lock().unwrap();
-        let mut writer = master.take_writer().map_err(|e| e.to_string())?;
+    let sessions = state.sessions.lock().unwrap();
+    if let Some(session_mutex) = sessions.get(&id) {
+        let mut session = session_mutex.lock().unwrap();
         let buf = data.as_bytes();
-        let _ = writer.write_all(buf);
-        let _ = writer.flush();
+        session.writer.write_all(buf).map_err(|e| e.to_string())?;
+        session.writer.flush().map_err(|e| e.to_string())?;
         Ok(())
     } else {
         Err("Terminal session not found".to_string())
@@ -103,10 +117,11 @@ pub fn resize_terminal(
     rows: u16,
     cols: u16,
 ) -> Result<(), String> {
-    let processes = state.processes.lock().unwrap();
-    if let Some(master_mutex) = processes.get(&id) {
-        let master = master_mutex.lock().unwrap();
-        master
+    let sessions = state.sessions.lock().unwrap();
+    if let Some(session_mutex) = sessions.get(&id) {
+        let session = session_mutex.lock().unwrap();
+        session
+            .master
             .resize(PtySize {
                 rows,
                 cols,

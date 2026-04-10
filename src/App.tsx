@@ -534,6 +534,13 @@ function App() {
           const info = await invoke<ProjectInfo | null>("get_project_info", { path: activeProject.path });
           if (info) {
             setProjectInfo(info);
+            // If project is Unknown, try to re-detect it (could have been changed since first add)
+            if (info.project_type === "Unknown") {
+              const detected = await invoke<ProjectInfo>("detect_and_save_project_info", { path: activeProject.path });
+              if (detected.project_type !== "Unknown") {
+                setProjectInfo(detected);
+              }
+            }
           } else {
             // Auto detect once if not present
             const detected = await invoke<ProjectInfo>("detect_and_save_project_info", { path: activeProject.path });
