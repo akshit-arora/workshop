@@ -28,20 +28,32 @@ pub async fn get_artisan_commands(path: String) -> Result<Vec<ArtisanCommand>, S
         return Err("Not a Laravel project (artisan not found)".to_string());
     }
 
-    let output = std::process::Command::new("php")
-        .arg("artisan")
+    let mut cmd = std::process::Command::new("php");
+    cmd.arg("artisan")
         .arg("list")
         .arg("--format=json")
-        .current_dir(project_path)
-        .output()
-        .map_err(|e| format!("Failed to execute php artisan: {}", e))?;
+        .current_dir(project_path);
+
+    let output = cmd.output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                "The 'php' executable was not found in your system PATH. Please ensure PHP is installed and accessible.".to_string()
+            } else {
+                format!("Failed to execute php artisan: {}", e)
+            }
+        })?;
 
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(if stderr.is_empty() {
+            "Artisan command failed with no output (check your Laravel configuration)".to_string()
+        } else {
+            format!("Artisan Error: {}", stderr)
+        });
     }
 
     let list: ArtisanList = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("Failed to parse artisan list: {}", e))?;
+        .map_err(|e| format!("Failed to parse artisan list: {}. This might happen if your Laravel app outputs something before the JSON response.", e))?;
 
     Ok(list.commands)
 }

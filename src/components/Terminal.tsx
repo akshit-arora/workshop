@@ -20,21 +20,25 @@ const ArtisanCommandSelector = ({ path, onSelect }: { path: string, onSelect: (c
     const [commands, setCommands] = useState<ArtisanCommand[]>([]);
     const [search, setSearch] = useState("");
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
+    const fetchCommands = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const cmds = await invoke<ArtisanCommand[]>("get_artisan_commands", { path });
+            setCommands(cmds);
+        } catch (err: any) {
+            console.error("Failed to fetch artisan commands:", err);
+            setError(err.toString());
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
-        const fetchCommands = async () => {
-            setLoading(true);
-            try {
-                const cmds = await invoke<ArtisanCommand[]>("get_artisan_commands", { path });
-                setCommands(cmds);
-            } catch (err) {
-                console.error("Failed to fetch artisan commands:", err);
-            } finally {
-                setLoading(false);
-            }
-        };
         fetchCommands();
     }, [path]);
 
@@ -66,19 +70,31 @@ const ArtisanCommandSelector = ({ path, onSelect }: { path: string, onSelect: (c
             </div>
             {isOpen && (
                 <ul tabIndex={0} className="dropdown-content z-[20] menu p-2 shadow-2xl bg-base-200 rounded-box w-80 max-h-96 overflow-hidden flex-nowrap border border-base-300 mt-1">
-                    <div className="px-2 pb-2 sticky top-0 bg-base-200 z-10">
+                    <div className="px-2 pb-2 sticky top-0 bg-base-200 z-10 flex gap-2">
                         <input
                             type="text"
                             placeholder="Search artisan commands..."
-                            className="input input-bordered input-sm w-full bg-base-100"
+                            className="input input-bordered input-sm flex-1 bg-base-100"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             autoFocus
                         />
+                        <button 
+                            className={`btn btn-square btn-sm ${loading ? 'btn-disabled' : ''}`}
+                            onClick={fetchCommands}
+                            title="Refresh commands"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                        </button>
                     </div>
                     <div className="overflow-y-auto flex-1 custom-scrollbar">
                         {loading ? (
                             <li className="p-4 text-center opacity-50 italic">Loading artisan commands...</li>
+                        ) : error ? (
+                            <li className="p-4 text-center text-error border border-error/20 bg-error/5 rounded-lg m-2">
+                                <span className="font-bold block mb-1">Error fetching commands</span>
+                                <span className="text-xs break-words">{error}</span>
+                            </li>
                         ) : filteredCommands.length === 0 ? (
                             <li className="p-4 text-center opacity-50 italic">No commands found</li>
                         ) : (
