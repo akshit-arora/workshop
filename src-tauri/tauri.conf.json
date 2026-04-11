@@ -39,7 +39,7 @@
       "endpoints": [
         "https://github.com/akshit-arora/workshop/releases/download/v__VERSION__/latest.json"
       ],
-      "pubkey": "untrusted comment: minisign public key: 14F23D2D689ED330\nRWQw055oLT3yFEuz10IARUiCxgD/i0A2T0FmRTz4/Wt1gISpTHNqV/3Y"
+      "pubkey": "untrusted comment: minisign public key: 8B989177EBA6817E\nRWR+gabrd5GYi2USD88Oaq6gzgiOL5rdO65jYX0OM5n25+v9FIUrNuyU"
     }
   }
 }
