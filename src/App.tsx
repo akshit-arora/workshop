@@ -9,6 +9,7 @@ import { Terminal } from "./components/Terminal";
 import { DatabaseViewer } from "./components/DatabaseViewer";
 import { LogViewer } from "./components/LogViewer";
 import { Tools } from "./components/Tools";
+import { TelescopeViewer } from "./components/TelescopeViewer";
 import "./App.css";
 
 const DAISY_THEMES = [
@@ -481,6 +482,7 @@ function App() {
   const [editors, setEditors] = useState<TextEditor[]>([]);
   const [defaultEditorId, setDefaultEditorId] = useState<string | null>(null);
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null);
+  const [isTelescopeEnabled, setIsTelescopeEnabled] = useState(false);
   const [dbKeepAlive, setDbKeepAlive] = useState(10);
   const [loaded, setLoaded] = useState(false);
   const [newEditorName, setNewEditorName] = useState("");
@@ -555,6 +557,29 @@ function App() {
     }
     loadProjectInfo();
   }, [activeProject]);
+
+  useEffect(() => {
+    async function checkTelescope() {
+      if (activeProject && projectInfo?.project_type === "Laravel") {
+        try {
+          const isInstalled = await invoke<boolean>("check_telescope_installed", { path: activeProject.path });
+          if (isInstalled) {
+            const config = await invoke<any>("get_laravel_db_config", { projectPath: activeProject.path });
+            const tables = await invoke<string[]>("list_tables", { config, projectPath: activeProject.path });
+            setIsTelescopeEnabled(tables.includes("telescope_entries"));
+          } else {
+            setIsTelescopeEnabled(false);
+          }
+        } catch (e) {
+          console.error("Failed to check telescope", e);
+          setIsTelescopeEnabled(false);
+        }
+      } else {
+        setIsTelescopeEnabled(false);
+      }
+    }
+    checkTelescope();
+  }, [activeProject, projectInfo]);
 
   useEffect(() => {
     async function checkForUpdatesOnStartup() {
@@ -1051,12 +1076,22 @@ function App() {
                     </a>
                   </li>
                   {projectInfo?.project_type === "Laravel" && (
-                    <li>
-                      <a className={view === 'logs' ? 'active' : ''} onClick={() => setView('logs')}>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                        Logs
-                      </a>
-                    </li>
+                    <>
+                      <li>
+                        <a className={view === 'logs' ? 'active' : ''} onClick={() => setView('logs')}>
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                          Logs
+                        </a>
+                      </li>
+                      {isTelescopeEnabled && (
+                        <li>
+                          <a className={view === 'telescope' ? 'active' : ''} onClick={() => setView('telescope')}>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                            Telescope
+                          </a>
+                        </li>
+                      )}
+                    </>
                   )}
                 </>
               )}
@@ -1111,6 +1146,15 @@ function App() {
           {activeProject && projectInfo?.project_type === "Laravel" && (
             <div className={`h-full ${view === 'logs' ? 'block' : 'hidden'}`}>
               <LogViewer projectPath={activeProject.path} />
+            </div>
+          )}
+          {activeProject && isTelescopeEnabled && (
+            <div className={`h-full ${view === 'telescope' ? 'block' : 'hidden'}`}>
+              <TelescopeViewer 
+                projectPath={activeProject.path} 
+                openInEditor={openInEditor} 
+                defaultEditor={editors.find(e => e.id === defaultEditorId) || null} 
+              />
             </div>
           )}
           {activeProject && (
