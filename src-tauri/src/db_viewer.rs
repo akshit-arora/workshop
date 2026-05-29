@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sqlx::{
-    mysql::MySqlPoolOptions, sqlite::SqlitePoolOptions, Column, MySqlPool, Row, SqlitePool,
+    mysql::MySqlPoolOptions, sqlite::SqlitePoolOptions, Column, MySqlPool, Row, SqlitePool, TypeInfo,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -307,35 +307,63 @@ pub async fn get_table_schema(
 }
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+use bigdecimal::{BigDecimal, ToPrimitive};
 
 fn sqlite_row_to_json(row: &sqlx::sqlite::SqliteRow) -> serde_json::Value {
     let mut map = serde_json::Map::new();
     for col in row.columns() {
         let name = col.name();
         let idx = col.ordinal();
+        let type_name = col.type_info().name().to_uppercase();
 
-        let value = if let Ok(v) = row.try_get::<String, usize>(idx) {
-            serde_json::Value::String(v)
-        } else if let Ok(v) = row.try_get::<i64, usize>(idx) {
-            serde_json::Value::Number(v.into())
-        } else if let Ok(v) = row.try_get::<f64, usize>(idx) {
-            serde_json::Number::from_f64(v)
-                .map(serde_json::Value::Number)
-                .unwrap_or(serde_json::Value::Null)
-        } else if let Ok(v) = row.try_get::<bool, usize>(idx) {
-            serde_json::Value::Bool(v)
-        } else if let Ok(v) = row.try_get::<i32, usize>(idx) {
-            serde_json::Value::Number(v.into())
-        } else if let Ok(v) = row.try_get::<NaiveDateTime, usize>(idx) {
-            serde_json::Value::String(v.format("%Y-%m-%d %H:%M:%S").to_string())
-        } else if let Ok(v) = row.try_get::<DateTime<Utc>, usize>(idx) {
-            serde_json::Value::String(v.to_rfc3339())
-        } else if let Ok(v) = row.try_get::<NaiveDate, usize>(idx) {
-            serde_json::Value::String(v.to_string())
-        } else if let Ok(v) = row.try_get::<NaiveTime, usize>(idx) {
-            serde_json::Value::String(v.to_string())
+        let value = if type_name.contains("INT") {
+            if let Ok(v) = row.try_get::<i64, usize>(idx) {
+                serde_json::Value::Number(v.into())
+            } else if let Ok(v) = row.try_get::<f64, usize>(idx) {
+                serde_json::Number::from_f64(v)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null)
+            } else if let Ok(v) = row.try_get::<String, usize>(idx) {
+                serde_json::Value::String(v)
+            } else {
+                serde_json::Value::Null
+            }
+        } else if type_name.contains("FLOAT") || type_name.contains("DOUBLE") || type_name.contains("REAL") || type_name.contains("NUMERIC") || type_name.contains("DECIMAL") {
+            if let Ok(v) = row.try_get::<f64, usize>(idx) {
+                serde_json::Number::from_f64(v)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null)
+            } else if let Ok(v) = row.try_get::<i64, usize>(idx) {
+                serde_json::Value::Number(v.into())
+            } else if let Ok(v) = row.try_get::<String, usize>(idx) {
+                serde_json::Value::String(v)
+            } else {
+                serde_json::Value::Null
+            }
         } else {
-            serde_json::Value::Null
+            if let Ok(v) = row.try_get::<String, usize>(idx) {
+                serde_json::Value::String(v)
+            } else if let Ok(v) = row.try_get::<i64, usize>(idx) {
+                serde_json::Value::Number(v.into())
+            } else if let Ok(v) = row.try_get::<f64, usize>(idx) {
+                serde_json::Number::from_f64(v)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null)
+            } else if let Ok(v) = row.try_get::<bool, usize>(idx) {
+                serde_json::Value::Bool(v)
+            } else if let Ok(v) = row.try_get::<i32, usize>(idx) {
+                serde_json::Value::Number(v.into())
+            } else if let Ok(v) = row.try_get::<NaiveDateTime, usize>(idx) {
+                serde_json::Value::String(v.format("%Y-%m-%d %H:%M:%S").to_string())
+            } else if let Ok(v) = row.try_get::<DateTime<Utc>, usize>(idx) {
+                serde_json::Value::String(v.format("%Y-%m-%d %H:%M:%S").to_string())
+            } else if let Ok(v) = row.try_get::<NaiveDate, usize>(idx) {
+                serde_json::Value::String(v.to_string())
+            } else if let Ok(v) = row.try_get::<NaiveTime, usize>(idx) {
+                serde_json::Value::String(v.to_string())
+            } else {
+                serde_json::Value::Null
+            }
         };
 
         map.insert(name.to_string(), value);
@@ -348,35 +376,100 @@ fn mysql_row_to_json(row: &sqlx::mysql::MySqlRow) -> serde_json::Value {
     for col in row.columns() {
         let name = col.name();
         let idx = col.ordinal();
+        let type_name = col.type_info().name().to_uppercase();
 
-        let value = if let Ok(v) = row.try_get::<String, usize>(idx) {
-            serde_json::Value::String(v)
-        } else if let Ok(v) = row.try_get::<i64, usize>(idx) {
-            serde_json::Value::Number(v.into())
-        } else if let Ok(v) = row.try_get::<u64, usize>(idx) {
-            serde_json::Value::Number(v.into())
-        } else if let Ok(v) = row.try_get::<i32, usize>(idx) {
-            serde_json::Value::Number(v.into())
-        } else if let Ok(v) = row.try_get::<u32, usize>(idx) {
-            serde_json::Value::Number(v.into())
-        } else if let Ok(v) = row.try_get::<i8, usize>(idx) {
-            serde_json::Value::Number(v.into())
-        } else if let Ok(v) = row.try_get::<bool, usize>(idx) {
-            serde_json::Value::Bool(v)
-        } else if let Ok(v) = row.try_get::<f64, usize>(idx) {
-            serde_json::Number::from_f64(v)
-                .map(serde_json::Value::Number)
-                .unwrap_or(serde_json::Value::Null)
-        } else if let Ok(v) = row.try_get::<NaiveDateTime, usize>(idx) {
-            serde_json::Value::String(v.format("%Y-%m-%d %H:%M:%S").to_string())
-        } else if let Ok(v) = row.try_get::<DateTime<Utc>, usize>(idx) {
-            serde_json::Value::String(v.to_rfc3339())
-        } else if let Ok(v) = row.try_get::<NaiveDate, usize>(idx) {
-            serde_json::Value::String(v.to_string())
-        } else if let Ok(v) = row.try_get::<NaiveTime, usize>(idx) {
-            serde_json::Value::String(v.to_string())
+        let value = if type_name.contains("DECIMAL") || type_name.contains("NUMERIC") {
+            if let Ok(v) = row.try_get::<BigDecimal, usize>(idx) {
+                if let Some(f) = v.to_f64() {
+                    serde_json::Number::from_f64(f)
+                        .map(serde_json::Value::Number)
+                        .unwrap_or_else(|| serde_json::Value::String(v.to_string()))
+                } else {
+                    serde_json::Value::String(v.to_string())
+                }
+            } else if let Ok(v) = row.try_get::<f64, usize>(idx) {
+                serde_json::Number::from_f64(v)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null)
+            } else if let Ok(v) = row.try_get::<i64, usize>(idx) {
+                serde_json::Value::Number(v.into())
+            } else if let Ok(v) = row.try_get::<String, usize>(idx) {
+                serde_json::Value::String(v)
+            } else {
+                serde_json::Value::Null
+            }
+        } else if type_name.contains("FLOAT") || type_name.contains("DOUBLE") {
+            if let Ok(v) = row.try_get::<f64, usize>(idx) {
+                serde_json::Number::from_f64(v)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null)
+            } else if let Ok(v) = row.try_get::<BigDecimal, usize>(idx) {
+                if let Some(f) = v.to_f64() {
+                    serde_json::Number::from_f64(f)
+                        .map(serde_json::Value::Number)
+                        .unwrap_or_else(|| serde_json::Value::String(v.to_string()))
+                } else {
+                    serde_json::Value::String(v.to_string())
+                }
+            } else if let Ok(v) = row.try_get::<i64, usize>(idx) {
+                serde_json::Value::Number(v.into())
+            } else if let Ok(v) = row.try_get::<String, usize>(idx) {
+                serde_json::Value::String(v)
+            } else {
+                serde_json::Value::Null
+            }
+        } else if type_name.contains("INT") {
+            if let Ok(v) = row.try_get::<i64, usize>(idx) {
+                serde_json::Value::Number(v.into())
+            } else if let Ok(v) = row.try_get::<u64, usize>(idx) {
+                serde_json::Value::Number(v.into())
+            } else if let Ok(v) = row.try_get::<i32, usize>(idx) {
+                serde_json::Value::Number(v.into())
+            } else if let Ok(v) = row.try_get::<u32, usize>(idx) {
+                serde_json::Value::Number(v.into())
+            } else if let Ok(v) = row.try_get::<i8, usize>(idx) {
+                serde_json::Value::Number(v.into())
+            } else {
+                serde_json::Value::Null
+            }
         } else {
-            serde_json::Value::Null
+            if let Ok(v) = row.try_get::<String, usize>(idx) {
+                serde_json::Value::String(v)
+            } else if let Ok(v) = row.try_get::<i64, usize>(idx) {
+                serde_json::Value::Number(v.into())
+            } else if let Ok(v) = row.try_get::<u64, usize>(idx) {
+                serde_json::Value::Number(v.into())
+            } else if let Ok(v) = row.try_get::<i32, usize>(idx) {
+                serde_json::Value::Number(v.into())
+            } else if let Ok(v) = row.try_get::<u32, usize>(idx) {
+                serde_json::Value::Number(v.into())
+            } else if let Ok(v) = row.try_get::<i8, usize>(idx) {
+                serde_json::Value::Number(v.into())
+            } else if let Ok(v) = row.try_get::<bool, usize>(idx) {
+                serde_json::Value::Bool(v)
+            } else if let Ok(v) = row.try_get::<f64, usize>(idx) {
+                serde_json::Number::from_f64(v)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null)
+            } else if let Ok(v) = row.try_get::<BigDecimal, usize>(idx) {
+                if let Some(f) = v.to_f64() {
+                    serde_json::Number::from_f64(f)
+                        .map(serde_json::Value::Number)
+                        .unwrap_or_else(|| serde_json::Value::String(v.to_string()))
+                } else {
+                    serde_json::Value::String(v.to_string())
+                }
+            } else if let Ok(v) = row.try_get::<NaiveDateTime, usize>(idx) {
+                serde_json::Value::String(v.format("%Y-%m-%d %H:%M:%S").to_string())
+            } else if let Ok(v) = row.try_get::<DateTime<Utc>, usize>(idx) {
+                serde_json::Value::String(v.format("%Y-%m-%d %H:%M:%S").to_string())
+            } else if let Ok(v) = row.try_get::<NaiveDate, usize>(idx) {
+                serde_json::Value::String(v.to_string())
+            } else if let Ok(v) = row.try_get::<NaiveTime, usize>(idx) {
+                serde_json::Value::String(v.to_string())
+            } else {
+                serde_json::Value::Null
+            }
         };
 
         map.insert(name.to_string(), value);

@@ -264,6 +264,14 @@ export const DatabaseViewer = ({ projectPath, keepAliveMinutes }: { projectPath:
     }
   }, [selectedTable]);
 
+  // Reset SQL mode specific states when toggling SQL mode
+  useEffect(() => {
+    setTotalCount(null);
+    if (!isSqlMode) {
+      setSelectedSavedQueryName("");
+    }
+  }, [isSqlMode]);
+
   const fetchSavedQueries = async () => {
     try {
       const q = await invoke<SavedQuery[]>("get_saved_queries", { path: projectPath });
@@ -506,7 +514,29 @@ export const DatabaseViewer = ({ projectPath, keepAliveMinutes }: { projectPath:
         if (col.is_primary_key) {
           primaryKeys[col.name] = detailedRow[col.name];
         } else {
-          updatedFields[col.name] = editData[col.name];
+          let val = editData[col.name];
+          if (val !== null && val !== undefined && val !== "") {
+            const lowerType = col.data_type.toLowerCase();
+            if (
+              lowerType.includes("int") ||
+              lowerType.includes("decimal") ||
+              lowerType.includes("float") ||
+              lowerType.includes("double") ||
+              lowerType.includes("real") ||
+              lowerType.includes("numeric") ||
+              lowerType.includes("number")
+            ) {
+              const num = Number(val);
+              if (!isNaN(num)) {
+                val = num;
+              }
+            } else if (lowerType === "boolean" || lowerType === "tinyint(1)") {
+              val = val === "true" || val === "1" || val === 1 || val === true;
+            }
+          } else if (val === "") {
+            val = null;
+          }
+          updatedFields[col.name] = val;
         }
       });
 
@@ -520,7 +550,8 @@ export const DatabaseViewer = ({ projectPath, keepAliveMinutes }: { projectPath:
 
       // Refresh data
       if (isSqlMode) await fetchRawSql(); else await fetchData();
-      setDetailedRow({ ...editData });
+      const newDetailedRow = { ...detailedRow, ...updatedFields };
+      setDetailedRow(newDetailedRow);
       setIsEditing(false);
       setEditData(null);
     } catch (e: any) {
@@ -530,23 +561,8 @@ export const DatabaseViewer = ({ projectPath, keepAliveMinutes }: { projectPath:
     }
   };
 
-  const handleInputChange = (column: string, value: any, dataType: string) => {
-    let finalValue = value;
-
-    // Basic validation based on simple data types
-    if (value !== null && value !== "") {
-      const lowerType = dataType.toLowerCase();
-      if (lowerType.includes("int") || lowerType.includes("decimal") || lowerType.includes("float") || lowerType.includes("double")) {
-        const num = Number(value);
-        if (!isNaN(num)) finalValue = num;
-      } else if (lowerType === "boolean" || lowerType === "tinyint(1)") {
-        finalValue = value === "true" || value === "1" || value === 1;
-      }
-    } else if (value === "") {
-      finalValue = null;
-    }
-
-    setEditData({ ...editData, [column]: finalValue });
+  const handleInputChange = (column: string, _value: any, _dataType: string) => {
+    setEditData({ ...editData, [column]: _value === "" ? null : _value });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -705,7 +721,7 @@ export const DatabaseViewer = ({ projectPath, keepAliveMinutes }: { projectPath:
               </div>
 
               <div className="flex items-center gap-4">
-                {savedQueries.length > 0 && (
+                {isSqlMode && savedQueries.length > 0 && (
                   <select 
                     className="select select-bordered select-xs bg-base-100 max-w-[150px]"
                     value={selectedSavedQueryName}
