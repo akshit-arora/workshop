@@ -25,7 +25,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -34,12 +33,5 @@
       "icons/icon.ico"
     ]
   },
-  "plugins": {
-    "updater": {
-      "endpoints": [
-        "https://github.com/akshit-arora/workshop/releases/download/v__VERSION__/latest.json"
-      ],
-      "pubkey": "untrusted comment: minisign public key: 8B989177EBA6817E\nRWR+gabrd5GYi2USD88Oaq6gzgiOL5rdO65jYX0OM5n25+v9FIUrNuyU"
-    }
-  }
+  "plugins": {}
 }
