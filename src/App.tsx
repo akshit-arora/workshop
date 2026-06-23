@@ -541,6 +541,8 @@ function App() {
     checkTelescope();
   }, [activeProject, projectInfo]);
 
+  // Startup updates check is disabled since updater plugin is not bundled.
+  /*
   useEffect(() => {
     async function checkForUpdatesOnStartup() {
       try {
@@ -563,9 +565,9 @@ function App() {
         console.error("Startup auto-update check failed:", e);
       }
     }
-    // Only run if not in a dev environment typically, but we'll run it to ensure it attempts.
     checkForUpdatesOnStartup();
   }, []);
+  */
 
   const removeInfo = async () => {
     if (activeProject) {

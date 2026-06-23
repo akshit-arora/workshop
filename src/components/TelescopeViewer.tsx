@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 interface TelescopeSummary {
@@ -81,6 +81,13 @@ export const TelescopeViewer = ({ projectPath, openInEditor, defaultEditor }: {
     const [error, setError] = useState<string | null>(null);
     const [querySort, setQuerySort] = useState<{ field: 'time' | 'index', order: 'asc' | 'desc' }>({ field: 'index', order: 'asc' });
 
+    // Live mode states for the latest request
+    const [liveMode, setLiveMode] = useState(true);
+    const [latestRequest, setLatestRequest] = useState<RequestInsight | null>(null);
+    const [latestRequestBatchEntries, setLatestRequestBatchEntries] = useState<BatchEntry[]>([]);
+    const [flashHighlight, setFlashHighlight] = useState(false);
+    const latestRequestRef = useRef<RequestInsight | null>(null);
+
     const fetchData = async () => {
         setLoading(true);
         setError(null);
@@ -102,6 +109,21 @@ export const TelescopeViewer = ({ projectPath, openInEditor, defaultEditor }: {
             setHttpInsights(http || []);
             setNPlusOne(n1 || []);
             setRecentRequests(requests || []);
+
+            if (requests && requests.length > 0) {
+                const latest = requests[0];
+                setLatestRequest(latest);
+                latestRequestRef.current = latest;
+                const entries = await invoke<BatchEntry[]>("get_telescope_batch_entries", { 
+                    projectPath, 
+                    batchId: latest.batch_id 
+                });
+                setLatestRequestBatchEntries(entries || []);
+            } else {
+                setLatestRequest(null);
+                latestRequestRef.current = null;
+                setLatestRequestBatchEntries([]);
+            }
 
         } catch (err: any) {
             console.error(err);
@@ -131,6 +153,49 @@ export const TelescopeViewer = ({ projectPath, openInEditor, defaultEditor }: {
         fetchData();
     }, [projectPath]);
 
+    // Update latest request ref whenever latestRequest changes
+    useEffect(() => {
+        latestRequestRef.current = latestRequest;
+    }, [latestRequest]);
+
+    // Live mode auto polling
+    useEffect(() => {
+        if (!liveMode || !projectPath) return;
+
+        const interval = setInterval(async () => {
+            try {
+                const requests = await invoke<RequestInsight[]>("get_telescope_recent_requests", { projectPath });
+                if (requests && requests.length > 0) {
+                    const latest = requests[0];
+                    const currentLatest = latestRequestRef.current;
+                    
+                    if (!currentLatest || latest.uuid !== currentLatest.uuid) {
+                        setRecentRequests(requests);
+                        setLatestRequest(latest);
+                        
+                        const entries = await invoke<BatchEntry[]>("get_telescope_batch_entries", { 
+                            projectPath, 
+                            batchId: latest.batch_id 
+                        });
+                        setLatestRequestBatchEntries(entries || []);
+                        
+                        // Trigger visual flash
+                        setFlashHighlight(true);
+                        setTimeout(() => setFlashHighlight(false), 1500);
+
+                        // update other data too, so the dashboard stays fresh!
+                        const summaryData = await invoke<TelescopeSummary>("get_telescope_summary", { projectPath });
+                        setSummary(summaryData);
+                    }
+                }
+            } catch (err) {
+                console.error("Error polling latest request:", err);
+            }
+        }, 3000);
+
+        return () => clearInterval(interval);
+    }, [liveMode, projectPath]);
+
     const requestQueries = useMemo(() => {
         const queries = batchEntries
             .filter(e => e.type_name === 'query')
@@ -159,6 +224,44 @@ export const TelescopeViewer = ({ projectPath, openInEditor, defaultEditor }: {
         });
         return Object.entries(counts)
             .filter(([_, count]) => count > 5)
+            .map(([sql, count]) => ({ sql, count }));
+    }, [requestQueries]);
+
+    const latestQueries = useMemo(() => {
+        return latestRequestBatchEntries
+            .filter(e => e.type_name === 'query')
+            .map((e, index) => ({ ...JSON.parse(e.content), index }));
+    }, [latestRequestBatchEntries]);
+
+    const latestDuplicateQueries = useMemo(() => {
+        const counts: Record<string, number> = {};
+        latestQueries.forEach(q => {
+            counts[q.sql] = (counts[q.sql] || 0) + 1;
+        });
+        return Object.entries(counts)
+            .filter(([_, count]) => count > 1)
+            .map(([sql, count]) => ({ sql, count }));
+    }, [latestQueries]);
+
+    const latestExceptions = useMemo(() => {
+        return latestRequestBatchEntries
+            .filter(e => e.type_name === 'exception')
+            .map(e => JSON.parse(e.content));
+    }, [latestRequestBatchEntries]);
+
+    const requestExceptions = useMemo(() => {
+        return batchEntries
+            .filter(e => e.type_name === 'exception')
+            .map(e => JSON.parse(e.content));
+    }, [batchEntries]);
+
+    const requestDuplicateQueries = useMemo(() => {
+        const counts: Record<string, number> = {};
+        requestQueries.forEach(q => {
+            counts[q.sql] = (counts[q.sql] || 0) + 1;
+        });
+        return Object.entries(counts)
+            .filter(([_, count]) => count > 1)
             .map(([sql, count]) => ({ sql, count }));
     }, [requestQueries]);
 
@@ -326,7 +429,309 @@ export const TelescopeViewer = ({ projectPath, openInEditor, defaultEditor }: {
                         </div>
                     )}
 
-                    <div className="card bg-base-100 shadow-xl border border-base-300 overflow-hidden min-h-[400px]">
+                    {activeTab === "overview" && (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-500">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-base-200/40 p-5 rounded-2xl border border-base-300 gap-4">
+                                <div>
+                                    <h3 className="text-lg font-bold text-base-content flex items-center gap-2">
+                                        Latest Request Info
+                                        {liveMode ? (
+                                            <span className="badge badge-success gap-1 text-[10px] font-bold text-success-content animate-pulse">
+                                                <span className="h-1.5 w-1.5 rounded-full bg-success-content"></span>
+                                                LIVE MODE ACTIVE
+                                            </span>
+                                        ) : (
+                                            <span className="badge badge-ghost gap-1 text-[10px] font-bold opacity-60">
+                                                <span className="h-1.5 w-1.5 rounded-full bg-base-content/40"></span>
+                                                LIVE MODE PAUSED
+                                            </span>
+                                        )}
+                                    </h3>
+                                    <p className="text-xs opacity-60 mt-0.5">Real-time inspection of the last incoming web request.</p>
+                                </div>
+                                <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                                    <div className="form-control">
+                                        <label className="label cursor-pointer gap-2 bg-base-200 hover:bg-base-300 px-3 py-1.5 rounded-xl border border-base-300 transition-all select-none">
+                                            <span className="label-text font-bold text-xs">Live Mode</span>
+                                            <input 
+                                                type="checkbox" 
+                                                className="toggle toggle-primary toggle-sm" 
+                                                checked={liveMode}
+                                                onChange={(e) => setLiveMode(e.target.checked)}
+                                            />
+                                        </label>
+                                    </div>
+                                    <button 
+                                        className="btn btn-sm btn-outline border-base-300 hover:bg-base-200 hover:text-base-content gap-1" 
+                                        onClick={async () => {
+                                            setFlashHighlight(true);
+                                            setTimeout(() => setFlashHighlight(false), 1500);
+                                            await fetchData();
+                                        }}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.001 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                        Refresh
+                                    </button>
+                                </div>
+                            </div>
+
+                            {latestRequest ? (
+                                <div className={`card bg-base-100 shadow-xl border border-base-300 transition-all duration-500 overflow-hidden ${flashHighlight ? 'animate-flash-glow' : ''}`}>
+                                    {/* Request Header */}
+                                    <div className="bg-base-200/50 p-6 border-b border-base-300 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                        <div className="flex items-start gap-3">
+                                            <span className={`badge font-black uppercase text-xs px-2.5 py-3 ${
+                                                latestRequest.method === 'GET' ? 'badge-success text-success-content' :
+                                                latestRequest.method === 'POST' ? 'badge-primary text-primary-content' :
+                                                latestRequest.method === 'DELETE' ? 'badge-error text-error-content' : 'badge-warning text-warning-content'
+                                            }`}>
+                                                {latestRequest.method}
+                                            </span>
+                                            <div>
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <h4 className="font-mono font-bold text-base md:text-lg break-all text-base-content">
+                                                        {formatUri(latestRequest.uri)}
+                                                    </h4>
+                                                    <span className={`badge badge-sm font-bold ${
+                                                        latestRequest.status >= 500 ? 'badge-error' :
+                                                        latestRequest.status >= 400 ? 'badge-warning' : 'badge-success'
+                                                    }`}>
+                                                        {latestRequest.status}
+                                                    </span>
+                                                </div>
+                                                {latestRequest.controller_action && (
+                                                    <button 
+                                                        className="flex items-center gap-1.5 text-xs font-mono opacity-50 hover:opacity-100 hover:text-primary transition-all mt-1 w-fit group"
+                                                        onClick={() => handleOpenController(latestRequest.controller_action!)}
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                                                        </svg>
+                                                        {latestRequest.controller_action}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                            <div className="text-xs opacity-50 font-bold uppercase tracking-wider">{latestRequest.created_at}</div>
+                                            <div className="text-[10px] opacity-40 font-mono mt-0.5">UUID: {latestRequest.uuid.slice(0, 8)}...</div>
+                                        </div>
+                                    </div>
+
+                                    {/* Metrics Highlight Bar */}
+                                    <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-base-300 bg-base-100 border-b border-base-300">
+                                        {/* Duration */}
+                                        <div className="p-6 flex items-center justify-between">
+                                            <div>
+                                                <div className="text-xs font-black uppercase tracking-wider opacity-40 mb-1">Time Taken</div>
+                                                <div className="text-2xl font-black text-base-content flex items-baseline gap-1.5">
+                                                    {latestRequest.duration}
+                                                    <span className="text-sm font-bold opacity-60">ms</span>
+                                                </div>
+                                            </div>
+                                            <span className={`badge badge-lg font-bold px-3 py-4 ${
+                                                latestRequest.duration > 500 ? 'badge-error text-error-content animate-pulse' :
+                                                latestRequest.duration > 150 ? 'badge-warning text-warning-content' : 'badge-success text-success-content'
+                                            }`}>
+                                                {latestRequest.duration > 500 ? 'Slow Response' :
+                                                 latestRequest.duration > 150 ? 'Moderate' : 'Fast Response'}
+                                            </span>
+                                        </div>
+
+                                        {/* Total Queries */}
+                                        <div className="p-6 flex items-center justify-between">
+                                            <div>
+                                                <div className="text-xs font-black uppercase tracking-wider opacity-40 mb-1">Total Queries</div>
+                                                <div className="text-2xl font-black text-base-content flex items-baseline gap-1">
+                                                    {latestQueries.length}
+                                                    <span className="text-xs font-bold opacity-60">calls</span>
+                                                </div>
+                                            </div>
+                                            <span className={`badge badge-lg font-bold px-3 py-4 ${
+                                                latestQueries.length > 30 ? 'badge-error text-error-content' :
+                                                latestQueries.length > 10 ? 'badge-warning text-warning-content' : 'badge-info text-info-content'
+                                            }`}>
+                                                {latestQueries.length > 30 ? 'Heavy Database' :
+                                                 latestQueries.length > 10 ? 'Medium Load' : 'Light Load'}
+                                            </span>
+                                        </div>
+
+                                        {/* Duplicate Queries */}
+                                        <div className="p-6 flex items-center justify-between">
+                                            <div>
+                                                <div className="text-xs font-black uppercase tracking-wider opacity-40 mb-1">Duplicate Queries</div>
+                                                <div className="text-2xl font-black text-base-content flex items-baseline gap-1">
+                                                    {latestDuplicateQueries.length}
+                                                    <span className="text-xs font-bold opacity-60">redundant</span>
+                                                </div>
+                                            </div>
+                                            <span className={`badge badge-lg font-bold px-3 py-4 ${
+                                                latestDuplicateQueries.length > 0 ? 'badge-warning text-warning-content' : 'badge-success text-success-content'
+                                            }`}>
+                                                {latestDuplicateQueries.length > 0 ? 'Potential N+1' : 'No Duplicates'}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Exceptions section */}
+                                    {latestExceptions.length > 0 && (
+                                        <div className="p-6 pb-0 space-y-4">
+                                            <h5 className="font-bold text-error text-sm uppercase tracking-wider flex items-center gap-2">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                </svg>
+                                                Logged Exceptions
+                                                <span className="badge badge-error badge-sm font-bold text-white">{latestExceptions.length}</span>
+                                            </h5>
+                                            <div className="space-y-3">
+                                                {latestExceptions.map((ex, i) => (
+                                                    <div key={i} className="bg-error/5 hover:bg-error/10 border border-error/20 border-l-4 border-l-error p-4 rounded-xl transition-all duration-300">
+                                                        <div className="flex flex-col sm:flex-row justify-between items-start gap-2">
+                                                            <div className="min-w-0 flex-1 pr-4">
+                                                                <span className="text-[10px] uppercase font-black tracking-widest opacity-40 block text-error mb-0.5">{ex.class.split('\\').pop()}</span>
+                                                                <h4 className="text-xs font-bold truncate text-error font-mono" title={ex.class}>{ex.class}</h4>
+                                                                <p className="text-xs mt-2 font-medium opacity-90 text-base-content whitespace-pre-wrap leading-relaxed">
+                                                                    {ex.message}
+                                                                </p>
+                                                            </div>
+                                                            {ex.file && (
+                                                                <button 
+                                                                    className="btn btn-xs btn-error btn-outline font-mono text-[10px] shrink-0 mt-2 sm:mt-0"
+                                                                    onClick={() => handleOpenOrigin(ex.file, ex.line)}
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                                                                    </svg>
+                                                                    {ex.file.split('/').slice(-2).join('/')}:{ex.line}
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Queries List */}
+                                    <div className="p-6 bg-base-100/50">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                                            <h5 className="font-bold text-base-content text-sm uppercase tracking-wider flex items-center gap-2">
+                                                Database Query Log
+                                                <span className="badge badge-sm badge-ghost font-bold">{latestQueries.length}</span>
+                                            </h5>
+                                            
+                                            {latestDuplicateQueries.length > 0 && (
+                                                <div className="flex gap-2">
+                                                    <span className="badge badge-warning font-bold text-xs text-warning-content">
+                                                        ⚠️ {latestDuplicateQueries.length} duplicate queries executed!
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {latestQueries.length > 0 ? (
+                                            <div className="border border-base-300 rounded-2xl overflow-hidden max-h-[450px] overflow-y-auto shadow-inner bg-base-100">
+                                                <table className="table table-compact w-full border-separate border-spacing-0">
+                                                    <thead className="sticky top-0 bg-base-200/90 backdrop-blur z-10">
+                                                        <tr>
+                                                            <th className="bg-transparent text-[10px] uppercase font-black w-12 text-center text-base-content">#</th>
+                                                            <th className="bg-transparent text-[10px] uppercase font-black text-base-content">Query & Origin</th>
+                                                            <th className="bg-transparent text-[10px] uppercase font-black w-24 text-center text-base-content">Time</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-base-300/80 text-base-content">
+                                                        {latestQueries.map((q) => {
+                                                            const dupIndex = latestDuplicateQueries.findIndex(n => n.sql === q.sql);
+                                                            const dup = dupIndex !== -1 ? latestDuplicateQueries[dupIndex] : null;
+
+                                                            const bgColors = [
+                                                                'bg-error/10 hover:bg-error/15',
+                                                                'bg-warning/15 hover:bg-warning/20',
+                                                                'bg-info/10 hover:bg-info/15',
+                                                                'bg-success/10 hover:bg-success/15',
+                                                                'bg-primary/10 hover:bg-primary/15',
+                                                                'bg-secondary/10 hover:bg-secondary/15',
+                                                            ];
+                                                            
+                                                            const badgeColors = [
+                                                                'badge-error text-error-content',
+                                                                'badge-warning text-warning-content',
+                                                                'badge-info text-info-content',
+                                                                'badge-success text-success-content',
+                                                                'badge-primary text-primary-content',
+                                                                'badge-secondary text-secondary-content',
+                                                            ];
+
+                                                            const duplicateBgClass = dup ? bgColors[dupIndex % bgColors.length] : '';
+                                                            const duplicateBadgeColor = dup ? badgeColors[dupIndex % badgeColors.length] : '';
+
+                                                            return (
+                                                                <tr key={q.index} className={`transition-colors ${duplicateBgClass || 'hover:bg-base-200/30'}`}>
+                                                                    <td className="text-center align-middle">
+                                                                        <div className="badge badge-ghost badge-xs opacity-40 font-mono">{q.index + 1}</div>
+                                                                    </td>
+                                                                    <td className="py-4 align-middle">
+                                                                        <div className="space-y-3">
+                                                                            <code className="text-[11px] font-mono block whitespace-pre-wrap break-all opacity-95 leading-relaxed max-w-3xl px-2 text-base-content/95 bg-base-200/50 p-2.5 rounded-lg border border-base-300/30">
+                                                                                {q.sql}
+                                                                            </code>
+                                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                                {dup && (
+                                                                                    <span className={`badge badge-sm font-bold uppercase py-1 shadow-sm border border-black/10 ${duplicateBadgeColor}`}>
+                                                                                        ⚠️ Duplicate
+                                                                                    </span>
+                                                                                )}
+                                                                                {q.file && (
+                                                                                    <button 
+                                                                                        className="btn btn-xs btn-ghost gap-1 px-1.5 h-auto min-h-0 text-[10px] font-mono text-primary normal-case hover:bg-primary/10"
+                                                                                        onClick={() => handleOpenOrigin(q.file, q.line)}
+                                                                                    >
+                                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                                                                                        </svg>
+                                                                                        {q.file.split('/').slice(-2).join('/')}:{q.line}
+                                                                                    </button>
+                                                                                )}
+                                                                                {q.bindings && Object.keys(q.bindings).length > 0 && (
+                                                                                    <span className="text-[9px] opacity-50 bg-base-200 px-2 py-0.5 rounded font-mono border border-base-300">
+                                                                                        Bindings: {JSON.stringify(q.bindings)}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="text-center align-middle font-black text-primary text-xs shrink-0">
+                                                                        <span className={q.time > 50 ? 'text-error font-extrabold animate-pulse' : ''}>
+                                                                            {q.time}ms
+                                                                        </span>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-8 bg-base-200/30 rounded-2xl border border-dashed border-base-300 opacity-60 text-xs italic">
+                                                No database queries executed during this request.
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="card bg-base-100 shadow-xl border border-base-300 p-10 text-center text-base-content/60">
+                                    <span className="loading loading-spinner text-primary mx-auto mb-4"></span>
+                                    <h4 className="font-bold text-sm">Waiting for incoming requests...</h4>
+                                    <p className="text-xs opacity-50 mt-1">Make a request to your application to populate the live stream.</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab !== "overview" && (
+                        <div className="card bg-base-100 shadow-xl border border-base-300 overflow-hidden min-h-[400px]">
                         <div className="card-body p-0">
                             {activeTab === "requests" && (
                                 <div className="divide-y divide-base-300">
@@ -585,6 +990,7 @@ export const TelescopeViewer = ({ projectPath, openInEditor, defaultEditor }: {
                             )}
                         </div>
                     </div>
+                    )}
                 </>
             ) : (
                 <div className="animate-in fade-in slide-in-from-left-4 duration-500 min-h-screen text-base-content">
@@ -625,13 +1031,13 @@ export const TelescopeViewer = ({ projectPath, openInEditor, defaultEditor }: {
                             </div>
                         )}
                         {requestQueries.length > 30 && (
-                            <div className="alert alert-warning shadow-lg rounded-2xl py-3 border-none bg-warning/20">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current shrink-0 w-6 h-6 text-warning-content"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" /></svg>
-                                <div><h3 className="font-black text-xs uppercase tracking-widest text-warning-content">High Query Count</h3><p className="text-[11px] opacity-80 font-medium text-warning-content">This page load triggered {requestQueries.length} database queries.</p></div>
+                            <div className="alert alert-warning text-warning-content shadow-lg rounded-2xl py-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current shrink-0 w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" /></svg>
+                                <div><h3 className="font-black text-xs uppercase tracking-widest">High Query Count</h3><p className="text-[11px] opacity-80 font-medium">This page load triggered {requestQueries.length} database queries.</p></div>
                             </div>
                         )}
                         {requestNPlusOne.length > 0 && (
-                            <div className="alert alert-warning shadow-lg rounded-2xl py-3 bg-warning text-warning-content border-none">
+                            <div className="alert alert-warning text-warning-content shadow-lg rounded-2xl py-3">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current shrink-0 w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                                 <div><h3 className="font-black text-xs uppercase tracking-widest">N+1 Issues Detected</h3><p className="text-[11px] opacity-80 font-medium">Found {requestNPlusOne.length} redundant query patterns.</p></div>
                             </div>
@@ -640,6 +1046,44 @@ export const TelescopeViewer = ({ projectPath, openInEditor, defaultEditor }: {
 
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                         <div className="lg:col-span-3 space-y-6">
+                            {requestExceptions.length > 0 && (
+                                <div className="card bg-base-100 border border-error/30 shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2">
+                                    <div className="bg-error/10 p-4 border-b border-error/20 flex items-center gap-2 text-error">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                        </svg>
+                                        <h3 className="font-black text-xs uppercase tracking-widest">Logged Exceptions</h3>
+                                        <span className="badge badge-error badge-sm font-bold text-white ml-auto">{requestExceptions.length}</span>
+                                    </div>
+                                    <div className="card-body p-6 space-y-4">
+                                        {requestExceptions.map((ex, i) => (
+                                            <div key={i} className="bg-error/5 border border-error/10 border-l-4 border-l-error p-4 rounded-xl transition-all">
+                                                <div className="flex flex-col sm:flex-row justify-between items-start gap-2">
+                                                    <div className="min-w-0 flex-1 pr-4">
+                                                        <span className="text-[10px] uppercase font-black tracking-widest opacity-40 block text-error mb-0.5">{ex.class.split('\\').pop()}</span>
+                                                        <h4 className="text-xs font-bold truncate text-error font-mono" title={ex.class}>{ex.class}</h4>
+                                                        <p className="text-xs mt-2 font-medium opacity-90 text-base-content whitespace-pre-wrap leading-relaxed">
+                                                            {ex.message}
+                                                        </p>
+                                                    </div>
+                                                    {ex.file && (
+                                                        <button 
+                                                            className="btn btn-xs btn-error btn-outline font-mono text-[10px] shrink-0 mt-2 sm:mt-0"
+                                                            onClick={() => handleOpenOrigin(ex.file, ex.line)}
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                                                            </svg>
+                                                            {ex.file.split('/').slice(-2).join('/')}:{ex.line}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
                                 <div className="bg-base-200/50 p-4 border-b border-base-300 flex justify-between items-center">
                                     <h3 className="font-black text-xs uppercase tracking-widest opacity-60">SQL Query Timeline</h3>
@@ -673,9 +1117,32 @@ export const TelescopeViewer = ({ projectPath, openInEditor, defaultEditor }: {
                                                 </thead>
                                                 <tbody className="divide-y divide-base-300 text-base-content">
                                                     {requestQueries.map((q) => {
-                                                        const isDuplicate = requestNPlusOne.some(n => n.sql === q.sql);
+                                                        const dupIndex = requestDuplicateQueries.findIndex(n => n.sql === q.sql);
+                                                        const dup = dupIndex !== -1 ? requestDuplicateQueries[dupIndex] : null;
+
+                                                        const bgColors = [
+                                                            'bg-error/10 hover:bg-error/15',
+                                                            'bg-warning/15 hover:bg-warning/20',
+                                                            'bg-info/10 hover:bg-info/15',
+                                                            'bg-success/10 hover:bg-success/15',
+                                                            'bg-primary/10 hover:bg-primary/15',
+                                                            'bg-secondary/10 hover:bg-secondary/15',
+                                                        ];
+                                                        
+                                                        const badgeColors = [
+                                                            'badge-error text-error-content',
+                                                            'badge-warning text-warning-content',
+                                                            'badge-info text-info-content',
+                                                            'badge-success text-success-content',
+                                                            'badge-primary text-primary-content',
+                                                            'badge-secondary text-secondary-content',
+                                                        ];
+
+                                                        const duplicateBgClass = dup ? bgColors[dupIndex % bgColors.length] : '';
+                                                        const duplicateBadgeColor = dup ? badgeColors[dupIndex % badgeColors.length] : '';
+
                                                         return (
-                                                            <tr key={q.index} className={`transition-colors ${isDuplicate ? 'bg-warning/5 hover:bg-warning/10' : 'hover:bg-base-200/30'}`}>
+                                                            <tr key={q.index} className={`transition-colors ${duplicateBgClass || 'hover:bg-base-200/30'}`}>
                                                                 <td className="text-center">
                                                                     <div className="badge badge-ghost badge-xs opacity-40 font-mono">{q.index + 1}</div>
                                                                 </td>
@@ -684,8 +1151,13 @@ export const TelescopeViewer = ({ projectPath, openInEditor, defaultEditor }: {
                                                                         <code className="text-[11px] font-mono block whitespace-pre-wrap break-all opacity-80 leading-relaxed max-w-2xl px-2">
                                                                             {q.sql}
                                                                         </code>
-                                                                        {q.file && (
-                                                                            <div className="flex items-center gap-2">
+                                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                                            {dup && (
+                                                                                <span className={`badge badge-sm font-bold uppercase py-1 shadow-sm border border-black/10 ${duplicateBadgeColor}`}>
+                                                                                    ⚠️ Duplicate
+                                                                                </span>
+                                                                            )}
+                                                                            {q.file && (
                                                                                 <button 
                                                                                     className="btn btn-xs btn-ghost gap-1 px-1 h-auto min-h-0 text-[10px] font-mono text-primary normal-case hover:bg-primary/10"
                                                                                     onClick={() => handleOpenOrigin(q.file, q.line)}
@@ -693,13 +1165,13 @@ export const TelescopeViewer = ({ projectPath, openInEditor, defaultEditor }: {
                                                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
                                                                                     {q.file.split('/').slice(-2).join('/')}:{q.line}
                                                                                 </button>
-                                                                            </div>
-                                                                        )}
-                                                                        {q.bindings && Object.keys(q.bindings).length > 0 && (
-                                                                            <div className="text-[9px] opacity-40 bg-base-200/50 p-2 rounded-lg font-mono ml-2 border border-base-300 w-fit">
-                                                                                Bindings: {JSON.stringify(q.bindings)}
-                                                                            </div>
-                                                                        )}
+                                                                            )}
+                                                                            {q.bindings && Object.keys(q.bindings).length > 0 && (
+                                                                                <div className="text-[9px] opacity-40 bg-base-200/50 p-2 rounded-lg font-mono ml-2 border border-base-300 w-fit">
+                                                                                    Bindings: {JSON.stringify(q.bindings)}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
                                                                     </div>
                                                                 </td>
                                                                 <td className="text-center font-black text-primary text-xs">
