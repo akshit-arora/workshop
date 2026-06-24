@@ -190,3 +190,21 @@ pub async fn remove_project_info(path: String) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[tauri::command]
+pub async fn check_telescope_installed(path: String) -> Result<bool, String> {
+    let project_path = Path::new(&path);
+    let composer_path = project_path.join("composer.json");
+
+    if !composer_path.exists() {
+        return Ok(false);
+    }
+
+    let content = fs::read_to_string(composer_path).map_err(|e| e.to_string())?;
+    let composer: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+
+    let is_installed = composer.get("require").and_then(|r| r.get("laravel/telescope")).is_some()
+        || composer.get("require-dev").and_then(|r| r.get("laravel/telescope")).is_some();
+
+    Ok(is_installed)
+}

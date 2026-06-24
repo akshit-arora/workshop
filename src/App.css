@@ -1,3 +1,18 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@keyframes flash-glow {
+  0% {
+    box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.5);
+    background-color: rgba(59, 130, 246, 0.15);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+    background-color: transparent;
+  }
+}
+.animate-flash-glow {
+  animation: flash-glow 1.5s ease-out;
+}
+
