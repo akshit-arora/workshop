@@ -4,6 +4,9 @@ import Database from "@tauri-apps/plugin-sql";
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { readDir } from "@tauri-apps/plugin-fs";
+import { getVersion } from "@tauri-apps/api/app";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { Terminal } from "./components/Terminal";
 import { DatabaseViewer } from "./components/DatabaseViewer";
 import { LogViewer } from "./components/LogViewer";
@@ -287,7 +290,7 @@ const Projects = ({ projects, activeProject, createProject, switchProject, openP
   );
 };
 
-const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DAISY_THEMES, setName, editors, defaultEditorId, dbKeepAlive, setDbKeepAlive, newEditorName, setNewEditorName, newEditorCmd, setNewEditorCmd, handleAddEditor, handleRemoveEditor, handleSetDefault }: {
+const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DAISY_THEMES, setName, editors, defaultEditorId, dbKeepAlive, setDbKeepAlive, newEditorName, setNewEditorName, newEditorCmd, setNewEditorCmd, handleAddEditor, handleRemoveEditor, handleSetDefault, appVersion, updateStatus, updateInfo, downloadedBytes, contentLength, updaterError, handleCheckForUpdates, handleInstallUpdate }: {
   tempName: string,
   setTempName: (val: string) => void,
   tempTheme: string,
@@ -305,7 +308,15 @@ const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DA
   setNewEditorCmd: (val: string) => void,
   handleAddEditor: () => Promise<void>,
   handleRemoveEditor: (id: string) => Promise<void>,
-  handleSetDefault: (id: string) => Promise<void>
+  handleSetDefault: (id: string) => Promise<void>,
+  appVersion: string,
+  updateStatus: string,
+  updateInfo: { version: string; body?: string } | null,
+  downloadedBytes: number,
+  contentLength: number,
+  updaterError: string | null,
+  handleCheckForUpdates: (silent?: boolean) => Promise<void>,
+  handleInstallUpdate: () => Promise<void>
 }) => {
   return (
     <div className="max-w-2xl mx-auto animate-in slide-in-from-bottom-4 duration-500 text-base-content">
@@ -355,7 +366,7 @@ const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DA
 
         <div className="card bg-base-200 border border-base-300 shadow-sm">
           <div className="card-body">
-            <h2 className="card-title mb-2 text-primary">Database Settings</h2>
+            <h2 className="card-title mb-2">Database Settings</h2>
             <div className="form-control w-full">
               <label className="label">
                 <span className="label-text">Database Keep-alive time limit (minutes)</span>
@@ -420,6 +431,120 @@ const Settings = ({ tempName, setTempName, tempTheme, setTempTheme, setTheme, DA
             )}
           </div>
         </div>
+
+        <div className="card bg-base-200 border border-base-300 shadow-sm">
+          <div className="card-body">
+            <h2 className="card-title mb-2">Software Update</h2>
+            <p className="text-xs opacity-60 mb-4">Keep your application up to date with the latest features and security improvements.</p>
+
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between bg-base-100 p-4 rounded-lg border border-base-300">
+                <div>
+                  <div className="text-sm font-semibold opacity-70">Current Version</div>
+                  <div className="text-2xl font-black font-mono">v{appVersion}</div>
+                </div>
+                <div>
+                  {updateStatus === "idle" && (
+                    <span className="badge badge-ghost">Idle</span>
+                  )}
+                  {updateStatus === "checking" && (
+                    <span className="badge badge-info gap-2">
+                      <span className="loading loading-spinner loading-xs"></span>
+                      Checking...
+                    </span>
+                  )}
+                  {updateStatus === "uptodate" && (
+                    <span className="badge badge-success">Up to date</span>
+                  )}
+                  {updateStatus === "available" && (
+                    <span className="badge badge-warning">Update Available</span>
+                  )}
+                  {updateStatus === "downloading" && (
+                    <span className="badge badge-primary gap-2">
+                      <span className="loading loading-spinner loading-xs"></span>
+                      Downloading...
+                    </span>
+                  )}
+                  {updateStatus === "installing" && (
+                    <span className="badge badge-secondary gap-2">
+                      <span className="loading loading-spinner loading-xs"></span>
+                      Installing...
+                    </span>
+                  )}
+                  {updateStatus === "error" && (
+                    <span className="badge badge-error">Error</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Update Info / Action Card */}
+              {updateStatus === "available" && updateInfo && (
+                <div className="bg-warning/10 border border-warning/30 p-4 rounded-lg animate-in fade-in slide-in-from-top-2 duration-300">
+                  <h3 className="font-bold text-warning-content text-sm mb-1">New Version Available: v{updateInfo.version}</h3>
+                  {updateInfo.body && (
+                    <div className="text-xs opacity-80 mb-3 bg-base-100/50 p-2 rounded max-h-24 overflow-y-auto font-mono whitespace-pre-wrap">
+                      {updateInfo.body}
+                    </div>
+                  )}
+                  <button className="btn btn-sm btn-warning w-full" onClick={handleInstallUpdate}>
+                    Download & Install Update
+                  </button>
+                </div>
+              )}
+
+              {updateStatus === "downloading" && (
+                <div className="bg-base-100 p-4 rounded-lg border border-base-300 flex flex-col gap-2">
+                  <div className="flex justify-between text-xs font-semibold">
+                    <span>Downloading update...</span>
+                    <span>
+                      {contentLength > 0 
+                        ? `${Math.round(downloadedBytes / 1024 / 1024 * 10) / 10} MB / ${Math.round(contentLength / 1024 / 1024 * 10) / 10} MB` 
+                        : `${Math.round(downloadedBytes / 1024 * 10) / 10} KB`
+                      }
+                    </span>
+                  </div>
+                  <progress 
+                    className="progress progress-primary w-full" 
+                    value={contentLength > 0 ? (downloadedBytes / contentLength) * 100 : undefined} 
+                    max="100"
+                  ></progress>
+                </div>
+              )}
+
+              {updateStatus === "installing" && (
+                <div className="alert alert-info shadow-sm text-xs py-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current shrink-0 w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                  <span>Installing update. The application will restart automatically in a few seconds...</span>
+                </div>
+              )}
+
+              {updateStatus === "error" && updaterError && (
+                <div className="alert alert-error shadow-sm text-xs py-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <span className="break-all">Error: {updaterError}</span>
+                </div>
+              )}
+
+              {updateStatus === "uptodate" && (
+                <div className="alert alert-success shadow-sm text-xs py-3 animate-in fade-in duration-300">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <span>You are running the latest version of Workshop.</span>
+                </div>
+              )}
+
+              {/* General check button */}
+              {updateStatus !== "downloading" && updateStatus !== "installing" && (
+                <button 
+                  className={`btn btn-sm ${updateStatus === "available" ? "btn-outline" : "btn-primary"} w-full`} 
+                  onClick={() => handleCheckForUpdates(false)}
+                  disabled={updateStatus === "checking"}
+                >
+                  {updateStatus === "checking" ? "Checking..." : "Check for Updates"}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -448,6 +573,83 @@ function App() {
   const [newEditorName, setNewEditorName] = useState("");
   const [newEditorCmd, setNewEditorCmd] = useState("");
   const initStarted = useRef(false);
+
+  // Version and Updater state
+  const [appVersion, setAppVersion] = useState("1.0.0");
+  const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "available" | "uptodate" | "downloading" | "installing" | "error">("idle");
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; body?: string } | null>(null);
+  const [downloadedBytes, setDownloadedBytes] = useState(0);
+  const [contentLength, setContentLength] = useState(0);
+  const [updaterError, setUpdaterError] = useState<string | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+
+  const handleCheckForUpdates = async (silent = false) => {
+    if (!silent) {
+      setUpdateStatus("checking");
+      setUpdaterError(null);
+    }
+    try {
+      const update = await check();
+      if (update) {
+        setUpdateInfo({
+          version: update.version,
+          body: update.body || undefined
+        });
+        setUpdateStatus("available");
+        if (silent) {
+          setShowUpdateModal(true);
+        }
+      } else {
+        if (!silent) {
+          setUpdateStatus("uptodate");
+        }
+      }
+    } catch (e: any) {
+      console.error("Failed to check for updates:", e);
+      if (!silent) {
+        setUpdateStatus("error");
+        setUpdaterError(e.message || String(e));
+      }
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    setUpdateStatus("downloading");
+    setDownloadedBytes(0);
+    setContentLength(0);
+    try {
+      const update = await check();
+      if (update) {
+        let downloaded = 0;
+        await update.downloadAndInstall((event) => {
+          switch (event.event) {
+            case 'Started':
+              if (event.data.contentLength) {
+                setContentLength(event.data.contentLength);
+              }
+              setUpdateStatus("downloading");
+              break;
+            case 'Progress':
+              downloaded += event.data.chunkLength;
+              setDownloadedBytes(downloaded);
+              break;
+            case 'Finished':
+              setUpdateStatus("installing");
+              break;
+          }
+        });
+        
+        await relaunch();
+      } else {
+        setUpdateStatus("error");
+        setUpdaterError("No update available anymore.");
+      }
+    } catch (e: any) {
+      console.error("Update failed:", e);
+      setUpdateStatus("error");
+      setUpdaterError(e.message || String(e));
+    }
+  };
 
   const handleAddEditor = async () => {
     if (!newEditorName || !newEditorCmd || !db) return;
@@ -541,33 +743,29 @@ function App() {
     checkTelescope();
   }, [activeProject, projectInfo]);
 
-  // Startup updates check is disabled since updater plugin is not bundled.
-  /*
+  // Load version and check for updates silently on startup
   useEffect(() => {
-    async function checkForUpdatesOnStartup() {
+    async function initVersionAndCheckUpdates() {
       try {
+        const ver = await getVersion();
+        setAppVersion(ver);
+        
+        // Silent update check
         const update = await check();
         if (update) {
-          const yes = await ask(`A new version of Workshop (${update.version}) is available. Do you want to download and install it?`, {
-            title: 'Update Available',
-            kind: 'info',
+          setUpdateInfo({
+            version: update.version,
+            body: update.body || undefined
           });
-          if (yes) {
-            try {
-              await update.downloadAndInstall();
-              await message("Update installed successfully. The application will restart.", { title: "Update Success", kind: "info" });
-            } catch (dlErr) {
-              console.error("Failed to download and install startup update:", dlErr);
-            }
-          }
+          setUpdateStatus("available");
+          setShowUpdateModal(true);
         }
       } catch (e) {
-        console.error("Startup auto-update check failed:", e);
+        console.error("Startup version/update check failed:", e);
       }
     }
-    checkForUpdatesOnStartup();
+    initVersionAndCheckUpdates();
   }, []);
-  */
 
   const removeInfo = async () => {
     if (activeProject) {
@@ -1095,6 +1293,14 @@ function App() {
               handleAddEditor={handleAddEditor}
               handleRemoveEditor={handleRemoveEditor}
               handleSetDefault={handleSetDefault}
+              appVersion={appVersion}
+              updateStatus={updateStatus}
+              updateInfo={updateInfo}
+              downloadedBytes={downloadedBytes}
+              contentLength={contentLength}
+              updaterError={updaterError}
+              handleCheckForUpdates={handleCheckForUpdates}
+              handleInstallUpdate={handleInstallUpdate}
             />
           </div>
           <div className={`h-full ${view === 'tools' ? 'block' : 'hidden'}`}>
@@ -1139,9 +1345,94 @@ function App() {
         </div>
         <div className="flex items-center gap-3">
           <span>{name ? `USER: ${name.toUpperCase()}` : 'GUEST'}</span>
-          <span className="opacity-90 uppercase">v0.1.0</span>
+          <span className="opacity-90 uppercase">v{appVersion}</span>
         </div>
       </footer>
+
+      {/* Update Notification Modal */}
+      {showUpdateModal && updateInfo && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="card bg-base-200 border border-base-300 max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="card-body text-base-content">
+              <h2 className="card-title text-xl text-primary flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-warning animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                Update Available!
+              </h2>
+              <p className="text-sm mt-2 text-base-content">
+                A new version of Workshop is available. We recommend updating to keep the app running smoothly.
+              </p>
+              
+              <div className="bg-base-100 p-4 rounded-lg border border-base-300 my-4 flex flex-col gap-2">
+                <div className="flex justify-between text-xs opacity-75 font-mono">
+                  <span>Current Version:</span>
+                  <span className="font-bold">v{appVersion}</span>
+                </div>
+                <div className="flex justify-between text-xs opacity-75 font-mono">
+                  <span>New Version:</span>
+                  <span className="font-bold text-warning">v{updateInfo.version}</span>
+                </div>
+                {updateInfo.body && (
+                  <div className="mt-2 text-[11px] opacity-70 bg-base-200/50 p-2 rounded max-h-24 overflow-y-auto font-mono whitespace-pre-wrap border border-base-300/30">
+                    {updateInfo.body}
+                  </div>
+                )}
+              </div>
+
+              {updateStatus === "downloading" && (
+                <div className="flex flex-col gap-2 mb-4">
+                  <div className="flex justify-between text-xs font-semibold">
+                    <span>Downloading...</span>
+                    <span>
+                      {contentLength > 0 
+                        ? `${Math.round(downloadedBytes / 1024 / 1024 * 10) / 10} MB / ${Math.round(contentLength / 1024 / 1024 * 10) / 10} MB` 
+                        : `${Math.round(downloadedBytes / 1024 * 10) / 10} KB`
+                      }
+                    </span>
+                  </div>
+                  <progress 
+                    className="progress progress-primary w-full" 
+                    value={contentLength > 0 ? (downloadedBytes / contentLength) * 100 : undefined} 
+                    max="100"
+                  ></progress>
+                </div>
+              )}
+
+              {updateStatus === "installing" && (
+                <div className="alert alert-info text-xs py-2 mb-4 shadow-sm">
+                  <span>Installing update. Relaunching...</span>
+                </div>
+              )}
+
+              {updateStatus === "error" && updaterError && (
+                <div className="alert alert-error text-xs py-2 mb-4 shadow-sm">
+                  <span>Error: {updaterError}</span>
+                </div>
+              )}
+
+              <div className="card-actions justify-end gap-2">
+                {updateStatus !== "downloading" && updateStatus !== "installing" && (
+                  <>
+                    <button 
+                      className="btn btn-sm btn-ghost" 
+                      onClick={() => setShowUpdateModal(false)}
+                    >
+                      Later
+                    </button>
+                    <button 
+                      className="btn btn-sm btn-warning" 
+                      onClick={handleInstallUpdate}
+                    >
+                      Update Now
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
