@@ -40,11 +40,14 @@ pub async fn create_terminal<R: Runtime>(
         .map_err(|e| e.to_string())?;
 
     let default_shell = if cfg!(windows) {
-        "powershell.exe"
+        "powershell.exe".to_string()
     } else {
-        "zsh"
+        std::env::var("SHELL").unwrap_or_else(|_| "zsh".to_string())
     };
-    let mut cmd = CommandBuilder::new(default_shell);
+    let mut cmd = CommandBuilder::new(&default_shell);
+    if !cfg!(windows) {
+        cmd.arg("-l");
+    }
     cmd.cwd(cwd);
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
