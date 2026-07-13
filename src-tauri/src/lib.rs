@@ -102,8 +102,33 @@ mod logs_tests;
 #[cfg(test)]
 mod project_tests;
 
+#[cfg(unix)]
+fn load_shell_env() {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    if let Ok(output) = std::process::Command::new(&shell)
+        .args(&["-l", "-c", "env"])
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if let Some((key, value)) = line.split_once('=') {
+                    if key != "_" && !key.is_empty() {
+                        unsafe {
+                            std::env::set_var(key, value);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(unix)]
+    load_shell_env();
+
     tauri::Builder::default()
         .manage(terminal::TerminalState::default())
         .manage(db_viewer::DbState::default())
