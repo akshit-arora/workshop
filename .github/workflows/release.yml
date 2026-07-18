@@ -31,11 +31,16 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: install Rust stable
+      - name: install Rust stable (macOS)
+        if: contains(matrix.platform, 'macos')
         uses: dtolnay/rust-toolchain@stable
         with:
           # Universal macOS builds require both x86_64 and aarch64 targets
-          targets: ${{ contains(matrix.platform, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: install Rust stable (others)
+        if: "!contains(matrix.platform, 'macos')"
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -64,6 +69,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PASSWORD: ${{ secrets.TAURI_SIGNING_PASSWORD }}
         with:
           tagName: v__VERSION__          # __VERSION__ is replaced with the version from tauri.conf.json
           releaseName: "Workshop v__VERSION__"
