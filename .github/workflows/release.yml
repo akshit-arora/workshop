@@ -64,19 +64,11 @@ jobs:
       - name: install frontend dependencies
         run: npm install
 
-      - name: Extract base64 from private key
-        env:
-          RAW_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: |
-          CLEAN_KEY=$(echo "$RAW_KEY" | grep -oE '[A-Za-z0-9+/]{50,}={0,2}' | head -n 1)
-          echo "::add-mask::$CLEAN_KEY"
-          echo "TAURI_SIGNING_PRIVATE_KEY=$CLEAN_KEY" >> $GITHUB_ENV
-
       # ── Build & publish ────────────────────────────────────────────────────
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ env.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PASSWORD: ${{ secrets.TAURI_SIGNING_PASSWORD }}
         with:
           tagName: v__VERSION__          # __VERSION__ is replaced with the version from tauri.conf.json
