@@ -36,7 +36,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "RWRaZTKJcThbM3KfK9FS3TkY8/cfUDQu+NlOIxwJMDtFS/GC8LqoNtks",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMzNUIzODcxODkzMjY1NUEKUldSYVpUS0pjVGhiTTNLZks5RlMzVGtZOC9jZlVEUXUrTmxPSXh3Sk1EdEZTL0dDOExxb050a3MK",
       "endpoints": [
         "https://github.com/akshit-arora/workshop/releases/latest/download/latest.json"
       ]
