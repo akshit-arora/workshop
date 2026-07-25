@@ -14,8 +14,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: "macos-latest"   # macOS 14+ (arm64 runner, supports universal builds via cross-compile)
-            args: "--target universal-apple-darwin"
+          - platform: "macos-latest"   # macOS 14+ (arm64 runner, builds native Apple Silicon app by default)
+            args: ""
           - platform: "ubuntu-22.04"
             args: ""
           - platform: "windows-latest"
